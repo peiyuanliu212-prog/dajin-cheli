@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>大金撤离 · 仓库寻宝王</title>
+<style>
+:root {
+  --bg: #10130e;
+  --panel: #1b2016;
+  --panel-2: #232a1c;
+  --line: #3a4430;
+  --olive: #7fb069;
+  --khaki: #c9b458;
+  --hazard: #f2b705;
+  --text: #e8e6da;
+  --muted: #9aa48c;
+  --danger: #e5484d;
+  --danger-dim: #5a2326;
+  --tier-white: #cfd2c9;
+  --tier-green: #58b368;
+  --tier-blue: #4f9dde;
+  --tier-purple: #a06cd5;
+  --tier-gold: #f5b921;
+  --tier-red: #ef3e4a;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body { background: var(--bg); color: var(--text); font-family: "PingFang SC", "Microsoft YaHei", sans-serif; }
+#app { max-width: 480px; margin: 0 auto; padding: 16px 14px 40px; min-height: 100vh; }
+.screen { display: none; }
+.screen.active { display: block; }
+.hidden { display: none !important; }
+
+.hazard { height: 14px; margin: -16px -14px 18px; background: repeating-linear-gradient(45deg, var(--hazard) 0 16px, #10130e 16px 32px); }
+.logo { font-size: 52px; letter-spacing: 10px; text-align: center; margin-top: 10px; }
+.subtitle { text-align: center; color: var(--khaki); letter-spacing: 8px; font-size: 17px; margin-top: 2px; }
+.tagline { text-align: center; color: var(--muted); line-height: 1.7; margin: 18px 0; font-size: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.records { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; margin-bottom: 18px; }
+.rec span { display: block; color: var(--muted); font-size: 12px; }
+.rec b { font-size: 18px; color: var(--text); }
+.config-switch { margin-bottom: 20px; }
+.cs-label { color: var(--muted); font-size: 13px; display: block; margin-bottom: 8px; }
+.seg { display: flex; gap: 10px; }
+.seg-btn { flex: 1; background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 10px; font-size: 16px; cursor: pointer; }
+.seg-btn small { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; }
+.seg-btn.on { border-color: var(--hazard); background: var(--panel-2); box-shadow: inset 0 0 0 1px var(--hazard); }
+.btn-primary { display: block; width: 100%; background: var(--hazard); color: #141414; border: none; border-radius: 10px; padding: 15px; font-size: 19px; font-weight: 700; letter-spacing: 3px; cursor: pointer; }
+.btn-primary:active { transform: scale(.99); }
+.btn-ghost { background: transparent; border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 11px 16px; font-size: 15px; cursor: pointer; }
+.btn-danger { background: var(--danger); border: none; color: #fff; border-radius: 10px; padding: 11px 16px; font-size: 15px; font-weight: 700; cursor: pointer; }
+.fineprint { color: var(--muted); font-size: 12px; line-height: 1.6; margin-top: 16px; text-align: center; }
+.screen-title { font-size: 22px; letter-spacing: 4px; margin: 8px 0 14px; }
+
+.wh-card { width: 100%; text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 12px; color: var(--text); cursor: pointer; }
+.wh-card:active { border-color: var(--hazard); }
+.wh-name { font-size: 21px; font-weight: 700; letter-spacing: 2px; }
+.wh-tag { color: var(--khaki); font-size: 13px; margin-left: 8px; }
+.wh-meta { color: var(--muted); font-size: 13px; margin-top: 8px; line-height: 1.6; }
+.wh-meta b { color: var(--text); }
+
+.hud { margin-bottom: 12px; }
+.hud-row { display: flex; justify-content: space-between; margin-bottom: 10px; }
+.hud-item span { display: block; color: var(--muted); font-size: 11px; }
+.hud-item b { font-size: 17px; }
+#hud-value { color: var(--hazard); }
+.alert-head { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
+#alert-stage { color: var(--text); font-weight: 700; }
+.alert-bar { position: relative; height: 12px; background: #0b0d09; border: 1px solid var(--line); border-radius: 6px; margin: 6px 0 4px; overflow: hidden; }
+#alert-fill { height: 100%; width: 0%; background: var(--olive); transition: width .35s ease, background .35s; }
+.alert-bar .tick { position: absolute; top: 0; width: 2px; height: 100%; background: var(--muted); opacity: .7; }
+.alert-bar .tick.danger { background: var(--danger); }
+.alert-warn { min-height: 18px; font-size: 13px; color: var(--danger); font-weight: 700; }
+.depth-hint { color: var(--muted); font-size: 12px; }
+
+.cells { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 8px; }
+.cell { aspect-ratio: 1; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font-size: 24px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 4px; }
+.cell small { font-size: 10px; color: var(--muted); }
+.cell .cv { font-size: 11px; color: var(--hazard); font-weight: 700; }
+.cell.unopened { background: repeating-linear-gradient(45deg, #262e1f 0 10px, #20271a 10px 20px); }
+.cell.opened { cursor: default; background: var(--panel); }
+.cell.revealing { animation: flip .3s ease; }
+@keyframes flip { 0% { transform: scaleX(.2); } 100% { transform: scaleX(1); } }
+.cell.t0 { border-color: var(--tier-white); } .cell.t1 { border-color: var(--tier-green); }
+.cell.t2 { border-color: var(--tier-blue); } .cell.t3 { border-color: var(--tier-purple); }
+.cell.t4 { border-color: var(--tier-gold); box-shadow: 0 0 10px rgba(245,185,33,.35); }
+.cell.t5 { border-color: var(--tier-red); box-shadow: 0 0 14px rgba(239,62,74,.55); }
+.event-line { min-height: 22px; color: var(--khaki); font-size: 14px; margin: 4px 0 10px; }
+.event-line.bad { color: var(--danger); }
+
+.bag-head { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+.bag { position: relative; height: 176px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 20% 25%; margin-bottom: 14px; }
+.bag-item { position: absolute; border: 1.5px solid; border-radius: 6px; background: rgba(16,19,14,.88); display: flex; align-items: center; justify-content: center; font-size: 19px; }
+.bag-item .lock { position: absolute; top: -7px; right: -5px; font-size: 11px; }
+.bag-item.t0 { border-color: var(--tier-white); } .bag-item.t1 { border-color: var(--tier-green); }
+.bag-item.t2 { border-color: var(--tier-blue); } .bag-item.t3 { border-color: var(--tier-purple); }
+.bag-item.t4 { border-color: var(--tier-gold); } .bag-item.t5 { border-color: var(--tier-red); }
+.evac { margin-top: 2px; }
+.seed-line { color: var(--muted); font-size: 12px; text-align: center; margin-top: 10px; }
+
+.modal { position: fixed; inset: 0; background: rgba(5,6,4,.78); display: flex; align-items: center; justify-content: center; z-index: 30; padding: 18px; }
+.modal-card { background: var(--panel); border: 1px solid var(--hazard); border-radius: 14px; padding: 20px; width: 100%; max-width: 420px; max-height: 86vh; overflow-y: auto; }
+.modal-card h3 { letter-spacing: 3px; margin-bottom: 12px; }
+.pending-item { border: 1.5px solid; border-radius: 10px; padding: 12px; text-align: center; font-size: 17px; margin-bottom: 12px; }
+.pending-item small { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
+.pending-note { color: var(--muted); font-size: 13px; line-height: 1.6; margin-bottom: 12px; }
+.modal-btns { display: flex; gap: 10px; margin-top: 10px; }
+.modal-btns.col { flex-direction: column; }
+.modal-btns > * { flex: 1; }
+.discard-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.discard-chip { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); border-radius: 8px; padding: 8px 10px; font-size: 13px; cursor: pointer; }
+.discard-chip.sel { border-color: var(--danger); background: var(--danger-dim); }
+
+.result-head { text-align: center; margin: 14px 0 6px; }
+.result-head .big { font-size: 40px; letter-spacing: 6px; font-weight: 800; }
+.result-head.win .big { color: var(--olive); }
+.result-head.lose .big { color: var(--danger); }
+.result-sub { text-align: center; color: var(--muted); margin-bottom: 14px; }
+.ledger { margin-bottom: 14px; }
+.ledger .row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 15px; }
+.ledger .row span { color: var(--muted); }
+.ledger .row.total b { color: var(--hazard); font-size: 19px; }
+.stamp { display: inline-block; border: 4px solid var(--danger); color: var(--danger); font-size: 56px; font-weight: 800; padding: 2px 18px; border-radius: 8px; transform: rotate(-8deg); margin: 8px 0; }
+.top-item { text-align: center; font-size: 16px; margin-bottom: 12px; }
+#share-canvas { width: 100%; border: 1px solid var(--line); border-radius: 10px; margin: 8px 0 4px; }
+.shake { animation: shake .5s ease; }
+@keyframes shake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-7px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(3px); } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- 首页 -->
+  <section id="screen-home" class="screen active">
+    <div class="hazard"></div>
+    <h1 class="logo">大金撤离</h1>
+    <p class="subtitle">仓 库 寻 宝 王</p>
+    <p class="tagline">逐格开箱，见好就收，还是再贪一格？<br>警戒爆表被抓，只剩保险格一件。</p>
+    <div class="records card">
+      <div class="rec"><span>历史最高带出</span><b id="rec-best">0 万</b></div>
+      <div class="rec"><span>累计成功带出</span><b id="rec-total">0 万</b></div>
+      <div class="rec"><span>累计保险保留</span><b id="rec-ins">0 万</b></div>
+      <div class="rec"><span>战绩</span><b id="rec-runs">0 局</b></div>
+    </div>
+    <div class="config-switch">
+      <span class="cs-label">概率配置</span>
+      <div class="seg" id="config-seg">
+        <button data-cfg="B" class="seg-btn">B 稀有<small>大金稀有 · 默认</small></button>
+        <button data-cfg="A" class="seg-btn">A 爽局<small>出货率高 · 活动</small></button>
+      </div>
+    </div>
+    <button id="btn-start" class="btn-primary">开始寻宝</button>
+    <p class="fineprint">规则全透明：警戒每开一格 +5~9（按仓库），92 起进入赌博区，95 起下一格必被抓。概率与数值见随附文档。</p>
+  </section>
+
+  <!-- 选仓 -->
+  <section id="screen-warehouse" class="screen">
+    <h2 class="screen-title">选择仓库</h2>
+    <div id="warehouse-list"></div>
+    <button id="btn-wh-back" class="btn-ghost">← 返回</button>
+  </section>
+
+  <!-- 局内 -->
+  <section id="screen-run" class="screen">
+    <div class="hud card">
+      <div class="hud-row">
+        <div class="hud-item"><span>背包估值</span><b id="hud-value">0 万</b></div>
+        <div class="hud-item"><span>件数</span><b id="hud-count">0 件</b></div>
+        <div class="hud-item"><span>已开</span><b id="hud-opens">0/16</b></div>
+        <div class="hud-item"><span>深度</span><b id="hud-depth">浅层</b></div>
+      </div>
+      <div class="alert-head">
+        <span id="alert-stage">平稳</span>
+        <span id="alert-num">警戒 0</span>
+        <span id="alert-next">下一格被抓概率 0%</span>
+      </div>
+      <div class="alert-bar"><div id="alert-fill"></div><i class="tick" style="left:70%"></i><i class="tick danger" style="left:92%"></i><i class="tick danger" style="left:95%"></i></div>
+      <p id="alert-warn" class="alert-warn"></p>
+      <p class="depth-hint">越深入仓库，高品质物资出现率越高，危险也在增加。</p>
+    </div>
+
+    <div id="cells" class="cells"></div>
+    <p id="event-line" class="event-line">点任意一格开始搜。</p>
+
+    <div class="bag-head"><span>背包（5×4）</span><span id="bag-cells-info">0/20 格</span></div>
+    <div id="bag" class="bag"></div>
+
+    <button id="btn-evac" class="btn-primary evac">撤离 · 带走 0 万</button>
+    <p class="seed-line">本局种子 <span id="run-seed"></span> · <span id="run-meta"></span></p>
+
+    <!-- 满仓待处置 -->
+    <div id="pending-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3>背包满了！</h3>
+        <div id="pending-item" class="pending-item"></div>
+        <p id="pending-note" class="pending-note">这件放不下。丢几件腾位（每件 +5 警戒），还是见好就收？</p>
+        <div id="discard-panel" class="hidden">
+          <div id="discard-list" class="discard-list"></div>
+          <p id="discard-info" class="pending-note"></p>
+          <div class="modal-btns">
+            <button id="btn-discard-confirm" class="btn-danger">确认丢弃</button>
+            <button id="btn-discard-cancel" class="btn-ghost">返回</button>
+          </div>
+        </div>
+        <div id="pending-btns" class="modal-btns col">
+          <button id="btn-pend-discard" class="btn-primary">丢弃腾位</button>
+          <button id="btn-pend-abandon" class="btn-ghost">放弃这件，继续搜</button>
+          <button id="btn-pend-evac" class="btn-ghost">直接撤离</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 结算 -->
+  <section id="screen-result" class="screen">
+    <div id="result-body"></div>
+    <canvas id="share-canvas" width="720" height="960"></canvas>
+    <div class="modal-btns">
+      <button id="btn-share" class="btn-ghost">保存战绩图</button>
+      <button id="btn-again" class="btn-primary">再来一局</button>
+    </div>
+    <div class="modal-btns">
+      <button id="btn-result-warehouse" class="btn-ghost">换仓库</button>
+      <button id="btn-result-home" class="btn-ghost">回首页</button>
+    </div>
+  </section>
+
+</div>
+<script>
+
+/* ===== src/config.js ===== */
+// 《大金撤离》唯一数值源（V0.3 冻结口径，与 tools/sim-configs.json 同构）
+// 改任何数值：先改 tools/sim-configs.json 跑模拟、回填 GAME_ECONOMY.md，再改这里。
+const SHARED = {
+  cellsPerWarehouse: 16,
+  backpackCols: 5,
+  backpackRows: 4,
+  alertMax: 100,
+  scareFromAlert: 60,
+  scareChance: 0.2,
+  scareAdd: 4,
+  discardAlertPerItem: 5,
+  earlyEvacBonusBelowAlert: 40,
+  earlyEvacBonusRate: 0.05,
+  depthMult: [1, 1.35, 1.7],
+  // 占格分布（按档位 0-5）：格数 -> 概率
+  sizeDistByTier: {
+    0: { 1: 0.9, 2: 0.1 },
+    1: { 1: 0.75, 2: 0.25 },
+    2: { 1: 0.5, 2: 0.4, 3: 0.1 },
+    3: { 2: 0.7, 3: 0.2, 4: 0.1 },
+    4: { 2: 0.5, 3: 0.35, 4: 0.15 },
+    5: { 3: 0.5, 4: 0.5 },
+  },
+  // 估值带（万）
+  valueBandsWan: { 0: [0.1, 0.5], 1: [0.5, 0.8], 2: [0.8, 2], 3: [2, 8], 4: [10, 30], 5: [80, 200] },
+};
+
+const TIER_NAMES = ['粗货', '良品', '稀有', '史诗', '传说', '大金'];
+const TIER_KEYS = ['white', 'green', 'blue', 'purple', 'gold', 'red'];
+
+// A/B 两套概率配置（试玩期可切换，默认 B）
+const CONFIGS = {
+  A: {
+    id: 'A', label: 'A 爽局', desc: '出货率高，爽感直接',
+    tierWeights: { 0: 0.28, 1: 0.30, 2: 0.22, 3: 0.11, 4: 0.06, 5: 0.03 },
+    ratingThresholdsWan: { S: 225, A: 160, B: 52 },
+  },
+  B: {
+    id: 'B', label: 'B 稀有', desc: '大金稀有，晒图有面',
+    tierWeights: { 0: 0.32, 1: 0.32, 2: 0.21, 3: 0.095, 4: 0.04, 5: 0.015 },
+    ratingThresholdsWan: { S: 193, A: 80, B: 36 },
+  },
+};
+const DEFAULT_CONFIG = 'B';
+
+// 仓库难度：weightMult 放大紫/金/红（公式同深度梯度），alertMin/Max 为本仓警戒增量区间
+const WAREHOUSES = [
+  { id: 'normal', name: '普通仓', tag: '城郊物流园 · 废弃分仓', weightMult: 1, alertMin: 5, alertMax: 8, hint: '巡逻稀疏，货色一般' },
+  { id: 'secret', name: '机密仓', tag: '港区保税仓 · 夜间无人', weightMult: 1.4, alertMin: 5, alertMax: 9, hint: '好货概率↑，警戒涨得快' },
+  { id: 'topsecret', name: '绝密仓', tag: '军供转运站 · 旧库房', weightMult: 1.9, alertMin: 6, alertMax: 9, hint: '大金温床，巡逻最密' },
+];
+
+// 把紫/金/红权重乘以 mult，增加量从白/绿按原比例扣除，蓝不变，结果归一
+function applyHighTierMult(weights, mult) {
+  if (mult === 1) return { ...weights };
+  const w = { ...weights };
+  let added = 0;
+  for (const t of [3, 4, 5]) { const d = w[t] * (mult - 1); w[t] += d; added += d; }
+  const base = w[0] + w[1];
+  w[0] -= added * (w[0] / base);
+  w[1] -= added * (w[1] / base);
+  return w;
+}
+
+// 当前开格序号（0 起）对应的深度倍率
+function depthMultAt(opens) {
+  const idx = Math.min(SHARED.depthMult.length - 1, Math.floor(opens / 5));
+  return SHARED.depthMult[idx];
+}
+function depthNameAt(opens) {
+  return ['浅层', '中层', '深层'][Math.min(2, Math.floor(opens / 5))];
+}
+
+/* ===== src/rng.js ===== */
+// 可复现随机：mulberry32 + 五条独立随机流（与模拟器 v2 同口径）
+// 同一 seed 的整局流程可逐位复现，供测试与玩家复盘。
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hashSeed(str) {
+  let h = 2166136261;
+  for (let i = 0; i < String(str).length; i++) {
+    h ^= String(str).charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+// 六条流：档位/估值/占格/警戒/惊吓/选物，互不干扰
+function makeStreams(seed) {
+  const base = (seed >>> 0) * 100000;
+  return {
+    tier: mulberry32(base + 1),
+    value: mulberry32(base + 2),
+    size: mulberry32(base + 3),
+    alert: mulberry32(base + 4),
+    scare: mulberry32(base + 5),
+    item: mulberry32(base + 6),
+  };
+}
+
+function pickWeighted(rnd, obj) {
+  let r = rnd(), acc = 0, last = null;
+  for (const [k, w] of Object.entries(obj)) { acc += w; last = k; if (r < acc) return k; }
+  return last;
+}
+
+/* ===== src/items.js ===== */
+// 物品表 v0.3：一期 40 件（白10/绿10/蓝8/紫6/金4/红2），全原创命名
+// schema: id/name/desc/tier(0-5)/icon/weight(仅同档池内权重) + 可选 valueMin/valueMax/sizeDist 覆写
+// 预留字段 setId/series/flavor 一期不填不开发（二期图鉴用）
+const ITEMS = [
+  // 白 · 粗货 ×10
+  { id: 'itm_001', name: '旧纸箱书', desc: '受潮的一箱旧书', tier: 0, icon: '📚', weight: 1 },
+  { id: 'itm_002', name: '生锈扳手', desc: '还能拧最后一颗螺丝', tier: 0, icon: '🔧', weight: 1 },
+  { id: 'itm_003', name: '过期罐头', desc: '过期三年的午餐肉', tier: 0, icon: '🥫', weight: 1 },
+  { id: 'itm_004', name: '旧雨伞', desc: '伞骨断了两根', tier: 0, icon: '☂️', weight: 1 },
+  { id: 'itm_005', name: '布娃娃', desc: '眼睛掉了一只', tier: 0, icon: '🧸', weight: 1 },
+  { id: 'itm_006', name: '废电线卷', desc: '铜芯还能卖个价', tier: 0, icon: '🔌', weight: 1 },
+  { id: 'itm_007', name: '铁皮饼干盒', desc: '里面只剩碎渣', tier: 0, icon: '🍪', weight: 1 },
+  { id: 'itm_008', name: '玻璃水杯', desc: '杯口有个豁', tier: 0, icon: '🥛', weight: 1 },
+  { id: 'itm_009', name: '旧台历', desc: '停在三年前那一页', tier: 0, icon: '📅', weight: 1 },
+  { id: 'itm_010', name: '塑料收纳盒', desc: '盖子找不到了', tier: 0, icon: '🗑️', weight: 1 },
+  // 绿 · 良品 ×10
+  { id: 'itm_011', name: '电动螺丝刀', desc: '电量还剩两格', tier: 1, icon: '🪛', weight: 1 },
+  { id: 'itm_012', name: '蓝牙小音箱', desc: '音质意外地能打', tier: 1, icon: '🔊', weight: 1 },
+  { id: 'itm_013', name: '机械键盘', desc: '青轴，敲起来脆', tier: 1, icon: '⌨️', weight: 1 },
+  { id: 'itm_014', name: '备用旧手机', desc: '屏没碎，能开机', tier: 1, icon: '📱', weight: 1 },
+  { id: 'itm_015', name: '电热水壶', desc: '烧水只要三分钟', tier: 1, icon: '🫖', weight: 1 },
+  { id: 'itm_016', name: '压箱羽绒服', desc: '吊牌都还没拆', tier: 1, icon: '🧥', weight: 1 },
+  { id: 'itm_017', name: '家用工具箱', desc: '钳子锤子一应俱全', tier: 1, icon: '🧰', weight: 1 },
+  { id: 'itm_018', name: '大容量充电宝', desc: '两万毫安，沉甸甸', tier: 1, icon: '🔋', weight: 1 },
+  { id: 'itm_019', name: '保温壶套装', desc: '一壶两杯，成套', tier: 1, icon: '🍶', weight: 1 },
+  { id: 'itm_020', name: '折叠车锁', desc: '钥匙还插在锁上', tier: 1, icon: '🔐', weight: 1 },
+  // 蓝 · 稀有 ×8
+  { id: 'itm_021', name: '老式收音机', desc: '旋钮一转全是回忆', tier: 2, icon: '📻', weight: 1 },
+  { id: 'itm_022', name: '胶片相机', desc: '镜头通透，快门清脆', tier: 2, icon: '📷', weight: 1 },
+  { id: 'itm_023', name: '老机械手表', desc: '上满弦还能走三天', tier: 2, icon: '⌚', weight: 1 },
+  { id: 'itm_024', name: '游戏卡带盒', desc: '整盒正版卡带', tier: 2, icon: '🎮', weight: 1 },
+  { id: 'itm_025', name: '整本邮票册', desc: '八十年代的整版票', tier: 2, icon: '📮', weight: 1 },
+  { id: 'itm_026', name: '紫砂茶具', desc: '一壶四杯，包浆温润', tier: 2, icon: '🍵', weight: 1 },
+  { id: 'itm_027', name: '军用望远镜', desc: '镜片镀膜完好', tier: 2, icon: '🔭', weight: 1 },
+  { id: 'itm_028', name: '黑胶唱片机', desc: '唱针落下，时光倒流', tier: 2, icon: '💿', weight: 1 },
+  // 紫 · 史诗 ×6
+  { id: 'itm_029', name: '绝版联名球鞋', desc: '鞋盒都在，尺码黄金', tier: 3, icon: '👟', weight: 1, sizeDist: { 2: 1 } },
+  { id: 'itm_030', name: '限量手办', desc: '未拆封，编号靠前', tier: 3, icon: '🎎', weight: 1 },
+  { id: 'itm_031', name: '陈年窖藏酒', desc: '封坛二十年的老酒', tier: 3, icon: '🏺', weight: 1 },
+  { id: 'itm_032', name: '翡翠摆件', desc: '水头足，灯下透绿', tier: 3, icon: '🗿', weight: 1 },
+  { id: 'itm_033', name: '古董座钟', desc: '整点还会敲钟', tier: 3, icon: '🕰️', weight: 1 },
+  { id: 'itm_034', name: '名家字画卷', desc: '落款印章俱全', tier: 3, icon: '🖼️', weight: 1 },
+  // 金 · 传说 ×4
+  { id: 'itm_035', name: '纪念金币套', desc: '整套十二枚，带证书', tier: 4, icon: '🪙', weight: 1 },
+  { id: 'itm_036', name: '老式金表', desc: '表盘鎏金，沉手', tier: 4, icon: '⌚', weight: 1 },
+  { id: 'itm_037', name: '钻石项链', desc: '火彩晃眼，真货', tier: 4, icon: '💎', weight: 1 },
+  { id: 'itm_038', name: '名贵相机镜头', desc: '收藏级老镜头', tier: 4, icon: '📸', weight: 1 },
+  // 红 · 大金 ×2
+  { id: 'itm_039', name: '馆藏级怀表', desc: '据说上过拍卖图录', tier: 5, icon: '🕰️', weight: 1 },
+  { id: 'itm_040', name: '孤品邮票套', desc: '整套存世不过十套', tier: 5, icon: '✉️', weight: 1 },
+];
+
+const ITEMS_BY_TIER = [0, 1, 2, 3, 4, 5].map(t => ITEMS.filter(i => i.tier === t));
+
+/* ===== src/sim/backpack.js ===== */
+// 背包摆放：确定性首适（行优先、默认朝向→旋转）+ 满载前确定性重排救援
+// 与 tools/montecarlo.mjs v2 同一算法，禁止在别处另写一套。
+
+const SHAPES = { 1: [[1, 1]], 2: [[2, 1], [1, 2]], 3: [[3, 1], [1, 3]], 4: [[2, 2]] };
+
+function newGrid() {
+  return Array.from({ length: SHARED.backpackRows }, () => Array(SHARED.backpackCols).fill(false));
+}
+
+// 在给定 grid 上尝试摆放 size 格物品；成功返回占用的 cells 并就地标记，失败返回 null（grid 不变）
+function tryPlaceOn(grid, size) {
+  for (const [w, h] of SHAPES[size]) {
+    for (let y = 0; y + h <= SHARED.backpackRows; y++) {
+      for (let x = 0; x + w <= SHARED.backpackCols; x++) {
+        let ok = true;
+        for (let dy = 0; dy < h && ok; dy++)
+          for (let dx = 0; dx < w; dx++) if (grid[y + dy][x + dx]) ok = false;
+        if (ok) {
+          const cells = [];
+          for (let dy = 0; dy < h; dy++)
+            for (let dx = 0; dx < w; dx++) { grid[y + dy][x + dx] = true; cells.push([x + dx, y + dy]); }
+          return cells;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+// 重排救援：全部物品按占格降序、估值降序重摆；成功返回 {grid, placed}（placed 为带 cells 的新数组），失败返回 null
+function repack(items) {
+  const sorted = [...items].sort((a, b) => b.size - a.size || b.value - a.value);
+  const grid = newGrid();
+  const placed = [];
+  for (const it of sorted) {
+    const cells = tryPlaceOn(grid, it.size);
+    if (!cells) return null;
+    placed.push({ ...it, cells });
+  }
+  return { grid, placed };
+}
+
+function freeCells(grid, cells) {
+  for (const [x, y] of cells) grid[y][x] = false;
+}
+
+function usedCells(bag) {
+  return bag.reduce((s, i) => s + i.size, 0);
+}
+
+/* ===== src/sim/generator.js ===== */
+// 物品生成：抽档（仓库倍率×深度梯度）→ 同档池按 weight 选物 → 估值带抽值 → 占格分布抽形状
+
+function effectiveWeights(config, warehouse, opens) {
+  let w = applyHighTierMult(config.tierWeights, warehouse.weightMult);
+  w = applyHighTierMult(w, depthMultAt(opens));
+  return w;
+}
+
+function genItem(streams, config, warehouse, opens) {
+  const w = effectiveWeights(config, warehouse, opens);
+  const tier = Number(pickWeighted(streams.tier, w));
+  const pool = ITEMS_BY_TIER[tier];
+  const totalW = pool.reduce((s, i) => s + i.weight, 0);
+  let r = streams.item() * totalW, chosen = pool[pool.length - 1];
+  for (const it of pool) { r -= it.weight; if (r < 0) { chosen = it; break; } }
+  const band = [chosen.valueMin ?? SHARED.valueBandsWan[tier][0], chosen.valueMax ?? SHARED.valueBandsWan[tier][1]];
+  const value = band[0] + streams.value() * (band[1] - band[0]);
+  const size = Number(pickWeighted(streams.size, chosen.sizeDist ?? SHARED.sizeDistByTier[tier]));
+  return {
+    itemId: chosen.id, name: chosen.name, desc: chosen.desc, icon: chosen.icon,
+    tier, value: Math.round(value * 10) / 10, size,
+  };
+}
+
+/* ===== src/sim/state.js ===== */
+// 局状态机（纯逻辑、无 DOM）：选仓后创建，phase: playing -> pending(满仓待处置) -> over
+// 规则口径：V0.3 冻结版 GAME_RULES（R1 判定、R2 保险标记、R3 摆放/重排、丢弃 +5/件）
+
+class Run {
+  constructor({ config, warehouse, seed }) {
+    this.config = config;
+    this.warehouse = warehouse;
+    this.seed = seed;
+    this.streams = makeStreams(seed);
+    this.alert = 0;
+    this.opens = 0;
+    this.cellsOpened = new Array(SHARED.cellsPerWarehouse).fill(false);
+    this.grid = newGrid();
+    this.bag = [];           // {uid, itemId, name, desc, icon, tier, value, size, cells}
+    this.insuredUid = null;  // R2：只是标记，物品仍占格
+    this.gross = 0;          // 搜获总值 G
+    this.hasRed = false;
+    this.discards = 0;
+    this.pending = null;     // 满仓待处置物品
+    this.phase = 'playing';  // playing | pending | over
+    this.outcome = null;     // evac | cleared | caught
+    this.uidSeq = 1;         // 局内计数器：同种子整局逐位可复现（含 uid）
+    this.startedAt = Date.now();
+  }
+
+  bagValue() { return this.bag.reduce((s, i) => s + i.value, 0); }
+  insuredItem() { return this.bag.find(i => i.uid === this.insuredUid) ?? null; }
+
+  refreshInsurance() {
+    let best = null;
+    for (const i of this.bag) if (!best || i.value > best.value) best = i;
+    this.insuredUid = best ? best.uid : null;
+  }
+
+  // 尝试把 item 放进背包（首适→重排），成功返回 true
+  place(item) {
+    const entry = { ...item, uid: this.uidSeq++ };
+    let cells = tryPlaceOn(this.grid, entry.size);
+    if (cells) { entry.cells = cells; this.bag.push(entry); this.refreshInsurance(); return true; }
+    const rp = repack([...this.bag, entry]);
+    if (rp) { this.grid = rp.grid; this.bag = rp.placed; this.refreshInsurance(); return true; }
+    return false;
+  }
+
+  // 本格被抓概率（UI 明示用）：增量均匀整数 [alertMin, alertMax]
+  nextCaughtProb() {
+    const { alertMin, alertMax } = this.warehouse;
+    const n = alertMax - alertMin + 1;
+    let hit = 0;
+    for (let d = alertMin; d <= alertMax; d++) if (this.alert + d >= SHARED.alertMax) hit++;
+    return hit / n;
+  }
+
+  openCell(idx) {
+    if (this.phase !== 'playing' || this.cellsOpened[idx]) return { type: 'ignored' };
+    // R1-⑥：警戒已爆表时再开格，直接被抓
+    if (this.alert >= SHARED.alertMax) return this.doCaught(0);
+    // R1-②③：先抽增量并累加
+    const { alertMin, alertMax } = this.warehouse;
+    const inc = alertMin + Math.floor(this.streams.alert() * (alertMax - alertMin + 1));
+    this.alert += inc;
+    // R1-④：爆表当场被抓，本格不揭示
+    if (this.alert >= SHARED.alertMax) return this.doCaught(inc);
+    // R1-⑤：揭示
+    this.cellsOpened[idx] = true;
+    this.opens++;
+    const item = genItem(this.streams, this.config, this.warehouse, this.opens - 1);
+    this.gross += item.value;
+    if (item.tier === 5) this.hasRed = true;
+    // 惊吓事件：警戒≥60 后 20% 概率 +4（只加警戒）
+    let scared = false;
+    if (this.alert >= SHARED.scareFromAlert && this.streams.scare() < SHARED.scareChance) {
+      this.alert += SHARED.scareAdd; scared = true;
+    }
+    if (this.place(item)) {
+      const done = this.opens >= SHARED.cellsPerWarehouse;
+      if (done) return { type: 'item', item, inc, scared, cleared: true, result: this.finishRun('cleared') };
+      return { type: 'item', item, inc, scared };
+    }
+    this.pending = item;
+    this.phase = 'pending';
+    return { type: 'full', item, inc, scared };
+  }
+
+  // 丢弃腾位（pending 阶段）：uids 为要丢弃的背包物品；返回是否已放下 pending
+  discard(uids) {
+    if (this.phase !== 'pending' || !this.pending) return { placed: false };
+    const drop = this.bag.filter(i => uids.includes(i.uid));
+    if (!drop.length) return { placed: false };
+    for (const d of drop) freeCells(this.grid, d.cells);
+    this.bag = this.bag.filter(i => !uids.includes(i.uid));
+    this.discards += drop.length;
+    this.alert += SHARED.discardAlertPerItem * drop.length;
+    this.refreshInsurance(); // R2：保险物被丢则标记转移到当前最贵
+    const item = this.pending;
+    if (this.place(item)) { this.pending = null; this.phase = 'playing'; return { placed: true, dropped: drop.length }; }
+    return { placed: false, dropped: drop.length };
+  }
+
+  abandonPending() {
+    if (this.phase !== 'pending') return;
+    this.pending = null;
+    this.phase = 'playing';
+  }
+
+  evacuate() {
+    if (this.phase === 'over') return null;
+    return this.finishRun(this.opens >= SHARED.cellsPerWarehouse ? 'cleared' : 'evac');
+  }
+
+  doCaught(inc) {
+    this.phase = 'over';
+    this.outcome = 'caught';
+    return { type: 'caught', inc, result: this.buildResult() };
+  }
+
+  finishRun(outcome) {
+    this.phase = 'over';
+    this.outcome = outcome;
+    return this.buildResult();
+  }
+
+  buildResult() {
+    const G = Math.round(this.gross * 10) / 10;
+    const items = [...this.bag].sort((a, b) => b.value - a.value);
+    const topItem = items[0] ?? null;
+    if (this.outcome === 'caught') {
+      const ins = this.insuredItem();
+      return {
+        outcome: 'caught', G, C: ins ? ins.value : 0, I: ins ? ins.value : 0, bonus: 0,
+        final: ins ? ins.value : 0, rating: null, insuredItem: ins, topItem,
+        opens: this.opens, items, hasRed: this.hasRed, seed: this.seed,
+        warehouse: this.warehouse, config: this.config, alert: this.alert,
+      };
+    }
+    const C = Math.round(this.bagValue() * 10) / 10;
+    const bonus = this.alert < SHARED.earlyEvacBonusBelowAlert ? Math.round(C * SHARED.earlyEvacBonusRate * 10) / 10 : 0;
+    return {
+      outcome: this.outcome, G, C, I: 0, bonus, final: Math.round((C + bonus) * 10) / 10,
+      rating: rateOf(C, this.config.ratingThresholdsWan), insuredItem: this.insuredItem(), topItem,
+      opens: this.opens, items, hasRed: this.hasRed, seed: this.seed,
+      warehouse: this.warehouse, config: this.config, alert: this.alert,
+    };
+  }
+
+  snapshot() {
+    return {
+      phase: this.phase, outcome: this.outcome, alert: this.alert, opens: this.opens,
+      bagValue: this.bagValue(), bagCount: this.bag.length, gross: this.gross,
+      pending: this.pending?.name ?? null, seed: this.seed,
+      config: this.config.id, warehouse: this.warehouse.id, nextCaughtProb: this.nextCaughtProb(),
+    };
+  }
+}
+
+function rateOf(carried, th) {
+  if (carried >= th.S) return 'S';
+  if (carried >= th.A) return 'A';
+  if (carried >= th.B) return 'B';
+  return 'C';
+}
+
+/* ===== src/save.js ===== */
+// localStorage 存档：纪录三分（最高成功带出 / 累计成功带出 / 累计保险保留，永不混）
+const KEY = 'dajin_save_v1';
+const DEFAULTS = {
+  bestCarried: 0, totalCarried: 0, totalInsurance: 0,
+  runs: 0, evacs: 0, caughts: 0, redRuns: 0, configName: 'B',
+};
+
+function loadSave() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return { ...DEFAULTS };
+    return { ...DEFAULTS, ...JSON.parse(raw) };
+  } catch {
+    return { ...DEFAULTS };
+  }
+}
+
+function storeSave(save) {
+  try { localStorage.setItem(KEY, JSON.stringify(save)); } catch { /* 容器不支持时降级为内存态 */ }
+}
+
+// 纪录口径：评级/最高纪录只认撤离局带出价值 C（不含加成）；保险保留单独入账
+function recordResult(save, result) {
+  save.runs += 1;
+  if (result.hasRed) save.redRuns += 1;
+  if (result.outcome === 'caught') {
+    save.caughts += 1;
+    save.totalInsurance += result.I;
+  } else {
+    save.evacs += 1;
+    save.totalCarried += result.C;
+    if (result.C > save.bestCarried) save.bestCarried = result.C;
+  }
+  save.configName = result.config.id;
+  storeSave(save);
+  return save;
+}
+
+/* ===== src/ads.js ===== */
+// 激励广告点位接口（一期全部 no-op 占位，五期接虎扑激励视频）
+// 红线：广告加成 A 永远独立记账，不进带出价值 C / 评级 / 纪录 / 分享卡主数字（ADR-007）
+const Ads = {
+  // 撤离结算 +30%（每局限 1 次，五期）
+  async settlementBonus() { return { granted: false, rate: 0.3 }; },
+  // 被抓挽回：保住第二贵的 1 件（每局限 1 次，五期）
+  async rescueSecondItem() { return { granted: false }; },
+  // 背包满临时 +4 格（每局限 1 次，五期）
+  async expandBag() { return { granted: false, extraCells: 4 }; },
+};
+
+/* ===== src/ui/sharecard.js ===== */
+// 分享卡：Canvas 动态组件（720×960），统一模板 + 本局真实数据成图，禁止静态图充数
+// drawShareCard 返回本次绘制的数据清单 manifest，供自动化测试断言（TECH_SPEC 视觉验收）
+
+const TIER_COLORS = ['#cfd2c9', '#58b368', '#4f9dde', '#a06cd5', '#f5b921', '#ef3e4a'];
+
+function fmtWan(v) {
+  if (v >= 100) return String(Math.round(v));
+  return (Math.round(v * 10) / 10).toString();
+}
+
+function drawShareCard(canvas, result) {
+  canvas.width = 720; canvas.height = 960;
+  const ctx = canvas.getContext('2d');
+  const caught = result.outcome === 'caught';
+  const mainValue = caught ? result.I : result.C;
+  const texts = [];
+
+  // 底：军绿金属 + 斜纹边框
+  ctx.fillStyle = '#10130e'; ctx.fillRect(0, 0, 720, 960);
+  ctx.fillStyle = '#1b2016'; ctx.fillRect(24, 24, 672, 912);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(24, 24, 672, 14); ctx.clip();
+  for (let x = -40; x < 740; x += 36) {
+    ctx.fillStyle = (x / 36) % 2 ? '#f2b705' : '#10130e';
+    ctx.beginPath();
+    ctx.moveTo(x, 38); ctx.lineTo(x + 18, 24); ctx.lineTo(x + 36, 24); ctx.lineTo(x + 18, 38);
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.strokeStyle = '#3a4430'; ctx.lineWidth = 3; ctx.strokeRect(24, 24, 672, 912);
+
+  const put = (t, x, y, font, color, align = 'left') => {
+    ctx.font = font; ctx.fillStyle = color; ctx.textAlign = align;
+    ctx.fillText(t, x, y); texts.push(t);
+  };
+
+  put('大 金 撤 离', 360, 108, 'bold 54px sans-serif', '#e8e6da', 'center');
+  put('仓库寻宝王 · 战绩单', 360, 152, '24px sans-serif', '#9aa48c', 'center');
+  put(`${result.warehouse.name} · ${result.config.label}`, 360, 196, '26px sans-serif', '#e8e6da', 'center');
+
+  if (caught) {
+    put('被 抓 了', 360, 300, 'bold 64px sans-serif', '#e5484d', 'center');
+    put('贪到最后，只保住保险格这一件', 360, 348, '26px sans-serif', '#9aa48c', 'center');
+    put('保险保留', 360, 440, '28px sans-serif', '#9aa48c', 'center');
+  } else {
+    put(result.outcome === 'cleared' ? '整 仓 搬 空' : '成 功 撤 离', 360, 300, 'bold 60px sans-serif', '#7fb069', 'center');
+    put('成功撤离 · 带出价值', 360, 348, '26px sans-serif', '#9aa48c', 'center');
+  }
+  put(`${fmtWan(mainValue)} 万`, 360, 540, 'bold 110px sans-serif', caught ? '#e5484d' : '#f5b921', 'center');
+
+  // 评级印章（仅撤离局）
+  if (!caught && result.rating) {
+    ctx.save();
+    ctx.translate(588, 268); ctx.rotate(0.22);
+    ctx.strokeStyle = '#e5484d'; ctx.lineWidth = 5;
+    ctx.strokeRect(-58, -58, 116, 116);
+    ctx.font = 'bold 84px sans-serif'; ctx.fillStyle = '#e5484d'; ctx.textAlign = 'center';
+    ctx.fillText(result.rating, 0, 30);
+    ctx.restore();
+    texts.push('评级' + result.rating);
+  }
+
+  // 最贵单品
+  const top = caught ? result.insuredItem : result.topItem;
+  let y = 640;
+  if (top) {
+    put('最贵单品', 80, y, '24px sans-serif', '#9aa48c');
+    put(`${top.icon} ${top.name}（${TIER_NAMES[top.tier]}）`, 80, y + 46, 'bold 34px sans-serif', TIER_COLORS[top.tier]);
+    put(`${fmtWan(top.value)} 万`, 640, y + 46, 'bold 34px sans-serif', '#e8e6da', 'right');
+    y += 110;
+  }
+  put(`开格 ${result.opens} 次 · 警戒 ${result.alert}`, 80, y, '24px sans-serif', '#9aa48c');
+  put(`搜获总值 ${fmtWan(result.G)} 万`, 640, y, '24px sans-serif', '#9aa48c', 'right');
+  y += 52;
+  put(new Date().toLocaleDateString('zh-CN'), 80, y, '22px sans-serif', '#9aa48c');
+  put(`种子 ${result.seed}`, 640, y, '22px sans-serif', '#9aa48c', 'right');
+
+  put(caught ? '贪到被抓，也是一种战绩' : '见好就收，还是再贪一格？', 360, 886, '26px sans-serif', '#e8e6da', 'center');
+
+  return { width: 720, height: 960, texts, mainValue, outcome: result.outcome };
+}
+
+/* ===== src/main.js ===== */
+// UI 层：四屏切换、HUD、揭示动画、满仓处置、双结算、分享卡
+// 规则与数值全部来自 sim 层与 config，本文件不写任何概率/判定。
+
+const params = new URLSearchParams(location.search);
+const FAST = params.get('fast') === '1';
+const SEED_PARAM = params.get('seed') ? Number(params.get('seed')) : null;
+const REVEAL_MS = [350, 450, 600, 800, 1100, 1500];
+const $ = id => document.getElementById(id);
+
+let save = loadSave();
+let currentConfig = CONFIGS[save.configName] ? save.configName : 'B';
+let run = null;
+let busy = false;
+let discardSel = new Set();
+let recorded = false;
+
+function show(screenId) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  $(screenId).classList.add('active');
+  window.scrollTo(0, 0);
+}
+const delay = ms => FAST ? Promise.resolve() : new Promise(r => setTimeout(r, ms));
+
+// ---------- 首页 ----------
+function renderHome() {
+  $('rec-best').textContent = `${fmtWan(save.bestCarried)} 万`;
+  $('rec-total').textContent = `${fmtWan(save.totalCarried)} 万`;
+  $('rec-ins').textContent = `${fmtWan(save.totalInsurance)} 万`;
+  $('rec-runs').textContent = `${save.evacs} 撤 / ${save.caughts} 抓 · 共 ${save.runs} 局`;
+  document.querySelectorAll('#config-seg .seg-btn').forEach(b => b.classList.toggle('on', b.dataset.cfg === currentConfig));
+}
+document.querySelectorAll('#config-seg .seg-btn').forEach(b =>
+  b.addEventListener('click', () => { currentConfig = b.dataset.cfg; save.configName = currentConfig; renderHome(); }));
+$('btn-start').addEventListener('click', () => { renderWarehouses(); show('screen-warehouse'); });
+$('btn-wh-back').addEventListener('click', () => { renderHome(); show('screen-home'); });
+
+// ---------- 选仓 ----------
+function renderWarehouses() {
+  $('warehouse-list').innerHTML = WAREHOUSES.map((w, i) => `
+    <button class="wh-card" data-wh="${i}">
+      <span class="wh-name">${w.name}</span><span class="wh-tag">${w.tag}</span>
+      <div class="wh-meta">警戒 <b>+${w.alertMin}~${w.alertMax}</b>/格 · 高品质倍率 <b>×${w.weightMult}</b><br>${w.hint}</div>
+    </button>`).join('');
+  document.querySelectorAll('.wh-card').forEach(c =>
+    c.addEventListener('click', () => startRun(WAREHOUSES[Number(c.dataset.wh)])));
+}
+
+// ---------- 开局与局内渲染 ----------
+function startRun(warehouse) {
+  const seed = SEED_PARAM ?? Math.floor(Math.random() * 90000000) + 10000000;
+  run = new Run({ config: CONFIGS[currentConfig], warehouse, seed });
+  recorded = false;
+  discardSel = new Set();
+  $('run-seed').textContent = seed;
+  $('run-meta').textContent = `${warehouse.name} · ${CONFIGS[currentConfig].label}`;
+  $('cells').innerHTML = Array.from({ length: SHARED.cellsPerWarehouse }, (_, i) =>
+    `<button class="cell unopened" data-cell="${i}">📦<small>${i + 1} 号格</small></button>`).join('');
+  document.querySelectorAll('.cell').forEach(c => c.addEventListener('click', () => onCell(Number(c.dataset.cell))));
+  $('pending-modal').classList.add('hidden');
+  setEvent('点任意一格开始搜。越往深处，好货越多。', false);
+  renderRun(0);
+  show('screen-run');
+}
+
+function setEvent(text, bad) {
+  const el = $('event-line');
+  el.textContent = text;
+  el.classList.toggle('bad', !!bad);
+}
+
+let displayedValue = 0;
+function renderRun(prevValue) {
+  // 估值跳字
+  const target = Math.round(run.bagValue() * 10) / 10;
+  if (FAST || prevValue === target) { displayedValue = target; $('hud-value').textContent = `${fmtWan(target)} 万`; }
+  else {
+    const from = prevValue, t0 = performance.now();
+    const step = t => {
+      const p = Math.min(1, (t - t0) / 300);
+      displayedValue = from + (target - from) * p;
+      $('hud-value').textContent = `${fmtWan(displayedValue)} 万`;
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+  $('hud-count').textContent = `${run.bag.length} 件`;
+  $('hud-opens').textContent = `${run.opens}/16`;
+  $('hud-depth').textContent = depthNameAt(run.opens);
+  // 警戒
+  const a = run.alert;
+  $('alert-num').textContent = `警戒 ${a}`;
+  const prob = Math.round(run.nextCaughtProb() * 100);
+  $('alert-next').textContent = `下一格被抓概率 ${prob}%`;
+  const stage = a >= 100 ? '爆表' : a >= 95 ? '必抓区' : a >= 92 ? '赌博区' : a >= 70 ? '警觉' : a >= 40 ? '察觉' : '平稳';
+  $('alert-stage').textContent = stage;
+  const fill = $('alert-fill');
+  fill.style.width = `${Math.min(100, a)}%`;
+  fill.style.background = a >= 92 ? 'var(--danger)' : a >= 70 ? 'var(--hazard)' : a >= 40 ? 'var(--khaki)' : 'var(--olive)';
+  $('alert-warn').textContent =
+    a >= 100 ? '⚠ 警戒已爆表：再开任何一格都会被抓，立刻撤离！' :
+    a >= 95 ? '⚠ 必抓区：现在开格 100% 被抓，先撤离！' :
+    a >= 92 ? `赌博区：下一格被抓概率 ${prob}%，想清楚再点。` : '';
+  // 背包
+  const bag = $('bag');
+  bag.innerHTML = '';
+  for (const it of run.bag) {
+    const xs = it.cells.map(c => c[0]), ys = it.cells.map(c => c[1]);
+    const d = document.createElement('div');
+    d.className = `bag-item t${it.tier}`;
+    d.style.left = `${Math.min(...xs) / 5 * 100}%`;
+    d.style.top = `${Math.min(...ys) / 4 * 100}%`;
+    d.style.width = `${(Math.max(...xs) - Math.min(...xs) + 1) / 5 * 100}%`;
+    d.style.height = `${(Math.max(...ys) - Math.min(...ys) + 1) / 4 * 100}%`;
+    d.innerHTML = `${it.icon}${it.uid === run.insuredUid ? '<span class="lock">🔒</span>' : ''}`;
+    d.title = `${it.name} · ${fmtWan(it.value)} 万`;
+    bag.appendChild(d);
+  }
+  const used = run.bag.reduce((s, i) => s + i.size, 0);
+  $('bag-cells-info').textContent = `${used}/20 格`;
+  const bonusHint = a < SHARED.earlyEvacBonusBelowAlert && run.bagValue() > 0 ? '（含早撤加成）' : '';
+  $('btn-evac').textContent = `撤离 · 带走 ${fmtWan(run.bagValue())} 万${bonusHint}`;
+}
+
+function renderCellOpened(idx, item) {
+  const c = document.querySelector(`.cell[data-cell="${idx}"]`);
+  if (!c) return;
+  c.className = `cell opened revealing t${item.tier}`;
+  c.innerHTML = `${item.icon}<span class="cv">${fmtWan(item.value)} 万</span>`;
+}
+
+async function onCell(idx) {
+  if (busy || !run || run.phase !== 'playing' || run.cellsOpened[idx]) return;
+  busy = true;
+  const prevValue = run.bagValue();
+  const ev = run.openCell(idx);
+  if (ev.type === 'caught') {
+    document.getElementById('app').classList.add('shake');
+    setEvent(`警戒爆表！巡逻队冲进来了——本格没来得及看。`, true);
+    renderRun(prevValue);
+    await delay(700);
+    document.getElementById('app').classList.remove('shake');
+    busy = false;
+    return finishToResult(ev.result);
+  }
+  if (ev.type === 'item' || ev.type === 'full') {
+    renderCellOpened(idx, ev.item);
+    await delay(REVEAL_MS[ev.item.tier]);
+    const scareTxt = ev.scared ? ' 巡逻脚步声突然变近，警戒额外 +4！' : '';
+    if (ev.type === 'item') {
+      setEvent(`${ev.item.icon} ${ev.item.name}（${TIER_NAMES[ev.item.tier]}）${fmtWan(ev.item.value)} 万，已入包。警戒 +${ev.inc}。${scareTxt}`, false);
+      renderRun(prevValue);
+      busy = false;
+      if (ev.cleared) { await delay(600); return finishToResult(ev.result); }
+    } else {
+      setEvent(`翻出 ${ev.item.name}，但背包塞不下了！${scareTxt}`, true);
+      renderRun(prevValue);
+      busy = false;
+      openPending();
+    }
+  }
+}
+
+// ---------- 满仓处置 ----------
+function openPending() {
+  const p = run.pending;
+  const el = $('pending-item');
+  el.style.borderColor = TIER_COLORS[p.tier];
+  el.innerHTML = `${p.icon} ${p.name}（${TIER_NAMES[p.tier]}）· ${fmtWan(p.value)} 万 · 占 ${p.size} 格<small>${p.desc}</small>`;
+  $('pending-note').textContent = '这件放不下。丢几件腾位（每件 +5 警戒），放弃这件，还是见好就收？';
+  $('discard-panel').classList.add('hidden');
+  $('pending-btns').classList.remove('hidden');
+  $('pending-modal').classList.remove('hidden');
+}
+$('btn-pend-discard').addEventListener('click', () => {
+  discardSel = new Set();
+  $('pending-btns').classList.add('hidden');
+  $('discard-panel').classList.remove('hidden');
+  renderDiscard();
+});
+$('btn-discard-cancel').addEventListener('click', () => {
+  $('discard-panel').classList.add('hidden');
+  $('pending-btns').classList.remove('hidden');
+});
+function renderDiscard() {
+  $('discard-list').innerHTML = run.bag.map(i =>
+    `<button class="discard-chip ${discardSel.has(i.uid) ? 'sel' : ''}" data-uid="${i.uid}">${i.icon} ${i.name} · ${fmtWan(i.value)}万 · ${i.size}格${i.uid === run.insuredUid ? ' 🔒' : ''}</button>`).join('');
+  document.querySelectorAll('.discard-chip').forEach(ch => ch.addEventListener('click', () => {
+    const uid = Number(ch.dataset.uid);
+    discardSel.has(uid) ? discardSel.delete(uid) : discardSel.add(uid);
+    renderDiscard();
+  }));
+  const sel = run.bag.filter(i => discardSel.has(i.uid));
+  const freed = sel.reduce((s, i) => s + i.size, 0);
+  $('discard-info').textContent = `已选 ${sel.length} 件 · 腾出 ${freed} 格 · 这件占 ${run.pending.size} 格 · 丢弃代价 警戒 +${SHARED.discardAlertPerItem * sel.length}（保险物被丢，标记自动转到最贵的一件）`;
+}
+$('btn-discard-confirm').addEventListener('click', () => {
+  if (!discardSel.size) return;
+  const prevValue = run.bagValue();
+  const res = run.discard([...discardSel]);
+  if (run.phase === 'playing') {
+    $('pending-modal').classList.add('hidden');
+    setEvent(`丢了 ${res.dropped} 件腾位，${run.pending === null ? '新物品已入包' : ''}。警戒 +${SHARED.discardAlertPerItem * res.dropped}。`, false);
+    renderRun(prevValue);
+  } else {
+    $('pending-note').textContent = '还是放不下（形状对不上）。再选几件，或放弃这件/直接撤离。';
+    discardSel = new Set();
+    renderDiscard();
+  }
+});
+$('btn-pend-abandon').addEventListener('click', () => {
+  const name = run.pending?.name;
+  run.abandonPending();
+  $('pending-modal').classList.add('hidden');
+  setEvent(`放弃了「${name}」，留在原地继续搜。`, false);
+  renderRun(run.bagValue());
+});
+$('btn-pend-evac').addEventListener('click', () => {
+  $('pending-modal').classList.add('hidden');
+  const res = run.evacuate();
+  if (res) finishToResult(res);
+});
+$('btn-evac').addEventListener('click', () => {
+  if (busy || !run || run.phase !== 'playing') return;
+  const res = run.evacuate();
+  if (res) finishToResult(res);
+});
+
+// ---------- 结算 ----------
+function finishToResult(result) {
+  if (!recorded) { save = recordResult(save, result); recorded = true; }
+  const body = $('result-body');
+  if (result.outcome === 'caught') {
+    const ins = result.insuredItem;
+    body.innerHTML = `
+      <div class="result-head lose"><div class="big">被 抓 了</div></div>
+      <p class="result-sub">${result.warehouse.name} · ${result.config.label} · 开了 ${result.opens} 格，警戒爆表</p>
+      <div class="card ledger">
+        <div class="row"><span>搜获总值</span><b>${fmtWan(result.G)} 万</b></div>
+        <div class="row"><span>被没收</span><b>-${fmtWan(result.G - result.I)} 万</b></div>
+        <div class="row total"><span>保险格保留</span><b>${fmtWan(result.I)} 万</b></div>
+      </div>
+      <p class="top-item">${ins ? `🔒 保险格保住了：${ins.icon} ${ins.name}（${TIER_NAMES[ins.tier]}）${fmtWan(ins.value)} 万` : '背包是空的，什么都没保住。'}</p>`;
+  } else {
+    body.innerHTML = `
+      <div class="result-head win"><div class="big">${result.outcome === 'cleared' ? '整仓搬空' : '撤离成功'}</div></div>
+      <p class="result-sub">${result.warehouse.name} · ${result.config.label} · 开了 ${result.opens} 格 · 警戒 ${result.alert}</p>
+      <div style="text-align:center"><span class="stamp">${result.rating}</span></div>
+      <div class="card ledger">
+        <div class="row"><span>搜获总值 G</span><b>${fmtWan(result.G)} 万</b></div>
+        <div class="row"><span>成功带出 C</span><b>${fmtWan(result.C)} 万</b></div>
+        ${result.bonus > 0 ? `<div class="row"><span>早撤加成（警戒<40，+5%）</span><b>+${fmtWan(result.bonus)} 万</b></div>` : ''}
+        <div class="row total"><span>最终到手</span><b>${fmtWan(result.final)} 万</b></div>
+      </div>
+      <p class="top-item">${result.topItem ? `最贵单品：${result.topItem.icon} ${result.topItem.name}（${TIER_NAMES[result.topItem.tier]}）${fmtWan(result.topItem.value)} 万` : ''}${result.hasRed ? ' · 本局出过大金！' : ''}</p>`;
+  }
+  const manifest = drawShareCard($('share-canvas'), result);
+  window.__DAJIN_LAST_CARD__ = manifest;
+  show('screen-result');
+}
+$('btn-share').addEventListener('click', () => {
+  $('share-canvas').toBlob(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `dajin-${run.outcome}-${run.seed}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  });
+});
+$('btn-again').addEventListener('click', () => startRun(run.warehouse));
+$('btn-result-warehouse').addEventListener('click', () => { renderWarehouses(); show('screen-warehouse'); });
+$('btn-result-home').addEventListener('click', () => { renderHome(); show('screen-home'); });
+
+// 测试钩子（TECH_SPEC）：返回当前局的纯数据快照
+window.__DAJIN_STATE__ = () => run ? run.snapshot() : { screen: 'home' };
+
+renderHome();
+
+</script>
+</body>
+</html>
