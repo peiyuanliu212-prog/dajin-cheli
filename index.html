@@ -265,7 +265,7 @@ const SHARED = {
   backpackCols: 5,
   backpackRows: 4,
   // 被抓判定坡道（ADR-021）：[增后警戒下限, 本格被抓概率]，取满足的最高档；<85 为 0，>=120 为 1
-  catchRamp: [[85, 0.10], [90, 0.20], [95, 0.35], [100, 0.55], [110, 0.75], [120, 1]],
+  catchRamp: [[60, 0.02], [70, 0.05], [80, 0.12], [90, 0.25], [100, 0.45], [110, 0.70], [120, 1]], // ADR-022：危险区提前到约第 7-8 格
   scareFromAlert: 60,
   scareChance: 0.3,
   scareAdd: 4,
@@ -583,7 +583,7 @@ class Run {
     const item = genItem(this.streams, this.config, this.warehouse, this.opens - 1);
     this.gross += item.value;
     if (item.tier === 5) this.hasRed = true;
-    // 惊吓事件：警戒≥60 后 20% 概率 +4（只加警戒）
+    // 惊吓事件：警戒≥60 后 30% 概率 +4（只加警戒）
     let scared = false;
     if (this.alert >= SHARED.scareFromAlert && this.streams.scare() < SHARED.scareChance) {
       this.alert += SHARED.scareAdd; scared = true;
@@ -935,8 +935,8 @@ function startRun(warehouse) {
     `<button class="cell unopened" data-cell="${i}">📦<small>${i + 1} 号格</small></button>`).join('');
   document.querySelectorAll('.cell').forEach(c => c.addEventListener('click', () => onCell(Number(c.dataset.cell))));
   $('pending-modal').classList.add('hidden');
-  // 警戒条刻度：风险线 = 从该警戒起，最大增量可达坡道起点 85（ADR-021）；必抓线在条外（>=111），隐藏
-  $('tick-gamble').style.left = `${85 - warehouse.alertMax}%`;
+  // 警戒条刻度：风险线 = 从该警戒起，最大增量可达坡道起点（ADR-021/022）；必抓线在条外（>=115），隐藏
+  $('tick-gamble').style.left = `${SHARED.catchRamp[0][0] - warehouse.alertMax}%`;
   $('tick-certain').style.display = 'none';
   setEvent('点任意一格开始搜。越往深处，好货越多。', false);
   renderRun(0);
