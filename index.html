@@ -150,6 +150,33 @@ body.police { animation: police .16s steps(1) 6; }
 .sound-toggle { display: block; margin: 12px auto 0; }
 .sound-mini { background: transparent; border: 1px solid var(--line); border-radius: 6px; color: var(--text); font-size: 13px; padding: 1px 7px; cursor: pointer; }
 
+/* ===== M2 收藏层 ===== */
+.home-nav { display: flex; gap: 8px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
+.screen-sub { color: var(--muted); font-size: 13px; text-align: center; margin: 2px 0 12px; }
+.coll-set { margin-bottom: 18px; }
+.coll-set-head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid var(--line); padding-bottom: 5px; margin-bottom: 8px; }
+.coll-set-head b { font-size: 15px; }
+.coll-set-head span { color: var(--muted); font-size: 12px; }
+.coll-set.done .coll-set-head b { color: var(--hazard); }
+.coll-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.coll-cell { border: 1.5px solid var(--line); border-radius: 10px; padding: 8px 4px 6px; text-align: center; background: rgba(255,255,255,.03); position: relative; }
+.coll-cell .cc-icon { font-size: 24px; display: block; }
+.coll-cell .cc-name { font-size: 11px; display: block; margin-top: 3px; line-height: 1.25; min-height: 28px; }
+.coll-cell .cc-count { position: absolute; top: 3px; right: 6px; font-size: 10px; color: var(--hazard); font-weight: 700; }
+.coll-cell.unlit { opacity: .42; }
+.coll-cell.unlit .cc-icon { filter: grayscale(1); }
+.coll-tier-title { margin: 14px 0 8px; font-size: 14px; }
+.ach-row { display: flex; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; margin-bottom: 8px; background: rgba(255,255,255,.03); }
+.ach-row .ach-icon { font-size: 22px; }
+.ach-row .ach-name { font-weight: 700; font-size: 14px; }
+.ach-row .ach-desc { color: var(--muted); font-size: 12px; }
+.ach-row.locked { opacity: .45; }
+.hist-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); padding: 7px 2px; font-size: 13px; }
+.hist-row .h-val { font-weight: 800; color: var(--hazard); }
+.hist-row.caught .h-val { color: var(--danger); }
+.hist-row .h-meta { color: var(--muted); font-size: 12px; }
+.unlock-note { border: 1.5px solid var(--hazard); border-radius: 10px; padding: 10px 12px; margin-top: 12px; background: rgba(245,185,33,.08); font-size: 14px; line-height: 1.7; }
+
 </style>
 </head>
 <body>
@@ -175,6 +202,11 @@ body.police { animation: police .16s steps(1) 6; }
       </div>
     </div>
     <button id="btn-start" class="btn-primary">开始寻宝</button>
+    <div class="home-nav">
+      <button id="btn-nav-collection" class="btn-ghost">📖 图鉴 <span id="nav-coll-count"></span></button>
+      <button id="btn-nav-ach" class="btn-ghost">🏆 成就 <span id="nav-ach-count"></span></button>
+      <button id="btn-nav-history" class="btn-ghost">📜 战绩</button>
+    </div>
     <button id="btn-sound-home" class="btn-ghost sound-toggle">🔊 音效：开</button>
     <p class="fineprint">规则全透明：警戒每开一格 +5~9（按仓库），越深巡逻越密；下一格风险按档明示（安全/低危/中危/高危/极危/必抓），警戒越高被抓概率越大，被抓只剩保险格一件。</p>
   </section>
@@ -252,6 +284,30 @@ body.police { animation: police .16s steps(1) 6; }
     </div>
   </section>
 
+  <!-- 图鉴（M2） -->
+  <section id="screen-collection" class="screen">
+    <h2 class="screen-title">图鉴</h2>
+    <p class="screen-sub" id="coll-summary"></p>
+    <div id="coll-body"></div>
+    <button class="btn-ghost back-home">← 返回</button>
+  </section>
+
+  <!-- 成就（M2） -->
+  <section id="screen-achievements" class="screen">
+    <h2 class="screen-title">成就</h2>
+    <p class="screen-sub" id="ach-summary"></p>
+    <div id="ach-body"></div>
+    <button class="btn-ghost back-home">← 返回</button>
+  </section>
+
+  <!-- 战绩历史（M2） -->
+  <section id="screen-history" class="screen">
+    <h2 class="screen-title">战绩历史</h2>
+    <p class="screen-sub">最近 30 局 · 撤离记带出、被抓记保险保留</p>
+    <div id="hist-body"></div>
+    <button class="btn-ghost back-home">← 返回</button>
+  </section>
+
   <div id="vignette"></div>
   <div id="loot-pop" class="hidden"><div id="loot-pop-inner"></div></div>
 </div>
@@ -315,8 +371,8 @@ const DEFAULT_CONFIG = 'B';
 // 2026-10-30 难度模拟定版（ADR-019）：绝密仓警戒由暂定 +6~9 校准为 +7~9，其余两仓暂定值验证通过转正
 const WAREHOUSES = [
   { id: 'normal', name: '普通仓', tag: '城郊物流园 · 废弃分仓', weightMult: 1, alertMin: 5, alertMax: 8, hint: '巡逻稀疏，货色一般' },
-  { id: 'secret', name: '机密仓', tag: '港区保税仓 · 夜间无人', weightMult: 1.4, alertMin: 5, alertMax: 9, hint: '好货概率↑，警戒涨得快' },
-  { id: 'topsecret', name: '绝密仓', tag: '军供转运站 · 旧库房', weightMult: 1.9, alertMin: 7, alertMax: 9, hint: '大金温床，巡逻最密' },
+  { id: 'secret', name: '机密仓', tag: '港区保税仓 · 夜间无人', weightMult: 1.6, alertMin: 6, alertMax: 9, hint: '好货明显变多，巡逻也密一截' },
+  { id: 'topsecret', name: '绝密仓', tag: '军供转运站 · 旧库房', weightMult: 2.4, alertMin: 8, alertMax: 10, hint: '大金温床，警戒蹿得最快' },
 ];
 
 // 把紫/金/红权重乘以 mult，增加量从白/绿按原比例扣除，蓝不变，结果归一
@@ -396,46 +452,61 @@ const ITEMS = [
   { id: 'itm_006', name: '废电线卷', desc: '铜芯还能卖个价', tier: 0, icon: '🔌', weight: 1 },
   { id: 'itm_007', name: '铁皮饼干盒', desc: '里面只剩碎渣', tier: 0, icon: '🍪', weight: 1 },
   { id: 'itm_008', name: '玻璃水杯', desc: '杯口有个豁', tier: 0, icon: '🥛', weight: 1 },
-  { id: 'itm_009', name: '旧台历', desc: '停在三年前那一页', tier: 0, icon: '📅', weight: 1 },
+  { id: 'itm_009', name: '旧台历', desc: '停在三年前那一页', tier: 0, icon: '📅', weight: 1, setId: 'set_paper' },
   { id: 'itm_010', name: '塑料收纳盒', desc: '盖子找不到了', tier: 0, icon: '🗑️', weight: 1 },
   // 绿 · 良品 ×10
-  { id: 'itm_011', name: '电动螺丝刀', desc: '电量还剩两格', tier: 1, icon: '🪛', weight: 1 },
+  { id: 'itm_011', name: '电动螺丝刀', desc: '电量还剩两格', tier: 1, icon: '🪛', weight: 1, setId: 'set_elec' },
   { id: 'itm_012', name: '蓝牙小音箱', desc: '音质意外地能打', tier: 1, icon: '🔊', weight: 1 },
-  { id: 'itm_013', name: '机械键盘', desc: '青轴，敲起来脆', tier: 1, icon: '⌨️', weight: 1 },
-  { id: 'itm_014', name: '备用旧手机', desc: '屏没碎，能开机', tier: 1, icon: '📱', weight: 1 },
-  { id: 'itm_015', name: '电热水壶', desc: '烧水只要三分钟', tier: 1, icon: '🫖', weight: 1 },
+  { id: 'itm_013', name: '机械键盘', desc: '青轴，敲起来脆', tier: 1, icon: '⌨️', weight: 1, setId: 'set_elec' },
+  { id: 'itm_014', name: '备用旧手机', desc: '屏没碎，能开机', tier: 1, icon: '📱', weight: 1, setId: 'set_elec' },
+  { id: 'itm_015', name: '电热水壶', desc: '烧水只要三分钟', tier: 1, icon: '🫖', weight: 1, setId: 'set_tea' },
   { id: 'itm_016', name: '压箱羽绒服', desc: '吊牌都还没拆', tier: 1, icon: '🧥', weight: 1 },
   { id: 'itm_017', name: '家用工具箱', desc: '钳子锤子一应俱全', tier: 1, icon: '🧰', weight: 1 },
-  { id: 'itm_018', name: '大容量充电宝', desc: '两万毫安，沉甸甸', tier: 1, icon: '🔋', weight: 1 },
-  { id: 'itm_019', name: '保温壶套装', desc: '一壶两杯，成套', tier: 1, icon: '🍶', weight: 1 },
+  { id: 'itm_018', name: '大容量充电宝', desc: '两万毫安，沉甸甸', tier: 1, icon: '🔋', weight: 1, setId: 'set_elec' },
+  { id: 'itm_019', name: '保温壶套装', desc: '一壶两杯，成套', tier: 1, icon: '🍶', weight: 1, setId: 'set_tea' },
   { id: 'itm_020', name: '折叠车锁', desc: '钥匙还插在锁上', tier: 1, icon: '🔐', weight: 1 },
   // 蓝 · 稀有 ×8
-  { id: 'itm_021', name: '老式收音机', desc: '旋钮一转全是回忆', tier: 2, icon: '📻', weight: 1 },
-  { id: 'itm_022', name: '胶片相机', desc: '镜头通透，快门清脆', tier: 2, icon: '📷', weight: 1 },
-  { id: 'itm_023', name: '老机械手表', desc: '上满弦还能走三天', tier: 2, icon: '⌚', weight: 1 },
+  { id: 'itm_021', name: '老式收音机', desc: '旋钮一转全是回忆', tier: 2, icon: '📻', weight: 1, setId: 'set_elec' },
+  { id: 'itm_022', name: '胶片相机', desc: '镜头通透，快门清脆', tier: 2, icon: '📷', weight: 1, setId: 'set_optic' },
+  { id: 'itm_023', name: '老机械手表', desc: '上满弦还能走三天', tier: 2, icon: '⌚', weight: 1, setId: 'set_time' },
   { id: 'itm_024', name: '游戏卡带盒', desc: '整盒正版卡带', tier: 2, icon: '🎮', weight: 1 },
-  { id: 'itm_025', name: '整本邮票册', desc: '八十年代的整版票', tier: 2, icon: '📮', weight: 1 },
-  { id: 'itm_026', name: '紫砂茶具', desc: '一壶四杯，包浆温润', tier: 2, icon: '🍵', weight: 1 },
-  { id: 'itm_027', name: '军用望远镜', desc: '镜片镀膜完好', tier: 2, icon: '🔭', weight: 1 },
+  { id: 'itm_025', name: '整本邮票册', desc: '八十年代的整版票', tier: 2, icon: '📮', weight: 1, setId: 'set_paper' },
+  { id: 'itm_026', name: '紫砂茶具', desc: '一壶四杯，包浆温润', tier: 2, icon: '🍵', weight: 1, setId: 'set_tea' },
+  { id: 'itm_027', name: '军用望远镜', desc: '镜片镀膜完好', tier: 2, icon: '🔭', weight: 1, setId: 'set_optic' },
   { id: 'itm_028', name: '黑胶唱片机', desc: '唱针落下，时光倒流', tier: 2, icon: '💿', weight: 1 },
   // 紫 · 史诗 ×6
   { id: 'itm_029', name: '绝版联名球鞋', desc: '鞋盒都在，尺码黄金', tier: 3, icon: '👟', weight: 1, sizeDist: { 2: 1 } },
-  { id: 'itm_030', name: '限量手办', desc: '未拆封，编号靠前', tier: 3, icon: '🎎', weight: 1 },
-  { id: 'itm_031', name: '陈年窖藏酒', desc: '封坛二十年的老酒', tier: 3, icon: '🏺', weight: 1 },
-  { id: 'itm_032', name: '翡翠摆件', desc: '水头足，灯下透绿', tier: 3, icon: '🗿', weight: 1 },
-  { id: 'itm_033', name: '古董座钟', desc: '整点还会敲钟', tier: 3, icon: '🕰️', weight: 1 },
-  { id: 'itm_034', name: '名家字画卷', desc: '落款印章俱全', tier: 3, icon: '🖼️', weight: 1 },
+  { id: 'itm_030', name: '限量手办', desc: '未拆封，编号靠前', tier: 3, icon: '🎎', weight: 1, setId: 'set_curio' },
+  { id: 'itm_031', name: '陈年窖藏酒', desc: '封坛二十年的老酒', tier: 3, icon: '🏺', weight: 1, setId: 'set_tea' },
+  { id: 'itm_032', name: '翡翠摆件', desc: '水头足，灯下透绿', tier: 3, icon: '🗿', weight: 1, setId: 'set_curio' },
+  { id: 'itm_033', name: '古董座钟', desc: '整点还会敲钟', tier: 3, icon: '🕰️', weight: 1, setId: 'set_time' },
+  { id: 'itm_034', name: '名家字画卷', desc: '落款印章俱全', tier: 3, icon: '🖼️', weight: 1, setId: 'set_curio' },
   // 金 · 传说 ×4
-  { id: 'itm_035', name: '纪念金币套', desc: '整套十二枚，带证书', tier: 4, icon: '🪙', weight: 1 },
-  { id: 'itm_036', name: '老式金表', desc: '表盘鎏金，沉手', tier: 4, icon: '⌚', weight: 1 },
-  { id: 'itm_037', name: '钻石项链', desc: '火彩晃眼，真货', tier: 4, icon: '💎', weight: 1 },
-  { id: 'itm_038', name: '名贵相机镜头', desc: '收藏级老镜头', tier: 4, icon: '📸', weight: 1 },
+  { id: 'itm_035', name: '纪念金币套', desc: '整套十二枚，带证书', tier: 4, icon: '🪙', weight: 1, setId: 'set_curio' },
+  { id: 'itm_036', name: '老式金表', desc: '表盘鎏金，沉手', tier: 4, icon: '⌚', weight: 1, setId: 'set_time' },
+  { id: 'itm_037', name: '钻石项链', desc: '火彩晃眼，真货', tier: 4, icon: '💎', weight: 1, setId: 'set_curio' },
+  { id: 'itm_038', name: '名贵相机镜头', desc: '收藏级老镜头', tier: 4, icon: '📸', weight: 1, setId: 'set_optic' },
   // 红 · 大金 ×2
-  { id: 'itm_039', name: '馆藏级怀表', desc: '据说上过拍卖图录', tier: 5, icon: '🕰️', weight: 1 },
-  { id: 'itm_040', name: '孤品邮票套', desc: '整套存世不过十套', tier: 5, icon: '✉️', weight: 1 },
+  { id: 'itm_039', name: '馆藏级怀表', desc: '据说上过拍卖图录', tier: 5, icon: '🕰️', weight: 1, setId: 'set_time' },
+  { id: 'itm_040', name: '孤品邮票套', desc: '整套存世不过十套', tier: 5, icon: '✉️', weight: 1, setId: 'set_paper' },
 ];
 
 const ITEMS_BY_TIER = [0, 1, 2, 3, 4, 5].map(t => ITEMS.filter(i => i.tier === t));
+
+// 套装（M2 图鉴）：24 件分 6 套，其余 16 件为散件、照样点亮收集
+const SETS = [
+  { id: 'set_time', name: '时计套装', desc: '表与钟的时间线' },
+  { id: 'set_optic', name: '光影套装', desc: '镜头与镜片' },
+  { id: 'set_tea', name: '茶酒套装', desc: '壶、杯与老酒' },
+  { id: 'set_paper', name: '纸品套装', desc: '纸上的年头' },
+  { id: 'set_elec', name: '电器套装', desc: '带电的老伙计' },
+  { id: 'set_curio', name: '珍玩套装', desc: '柜子里的宝贝' },
+];
+function setProgress(setId, collection) {
+  const members = ITEMS.filter(i => i.setId === setId);
+  const lit = members.filter(i => (collection[i.id] ?? 0) > 0).length;
+  return { lit, total: members.length, done: lit === members.length };
+}
 
 /* ===== src/sim/backpack.js ===== */
 // 背包摆放：确定性首适（行优先、默认朝向→旋转）+ 满载前确定性重排救援
@@ -533,6 +604,7 @@ class Run {
     this.hasRed = false;
     this.discards = 0;
     this.pending = null;     // 满仓待处置物品
+    this.reveals = [];       // 本局揭示过的物品（M2 图鉴点亮口径：揭示即点亮）
     this.phase = 'playing';  // playing | pending | over
     this.outcome = null;     // evac | cleared | caught
     this.uidSeq = 1;         // 局内计数器：同种子整局逐位可复现（含 uid）
@@ -581,6 +653,7 @@ class Run {
     this.cellsOpened[idx] = true;
     this.opens++;
     const item = genItem(this.streams, this.config, this.warehouse, this.opens - 1);
+    this.reveals.push({ itemId: item.itemId, name: item.name, tier: item.tier });
     this.gross += item.value;
     if (item.tier === 5) this.hasRed = true;
     // 惊吓事件：警戒≥60 后 30% 概率 +4（只加警戒）
@@ -645,7 +718,7 @@ class Run {
       return {
         outcome: 'caught', G, C: ins ? ins.value : 0, I: ins ? ins.value : 0, bonus: 0,
         final: ins ? ins.value : 0, rating: null, insuredItem: ins, topItem,
-        opens: this.opens, items, hasRed: this.hasRed, seed: this.seed,
+        opens: this.opens, items, hasRed: this.hasRed, seed: this.seed, reveals: this.reveals,
         warehouse: this.warehouse, config: this.config, alert: this.alert,
       };
     }
@@ -654,7 +727,7 @@ class Run {
     return {
       outcome: this.outcome, G, C, I: 0, bonus, final: Math.round((C + bonus) * 10) / 10,
       rating: rateOf(C, this.config.ratingThresholdsWan), insuredItem: this.insuredItem(), topItem,
-      opens: this.opens, items, hasRed: this.hasRed, seed: this.seed,
+      opens: this.opens, items, hasRed: this.hasRed, seed: this.seed, reveals: this.reveals,
       warehouse: this.warehouse, config: this.config, alert: this.alert,
     };
   }
@@ -677,28 +750,53 @@ function rateOf(carried, th) {
 }
 
 /* ===== src/save.js ===== */
-// localStorage 存档：纪录三分（最高成功带出 / 累计成功带出 / 累计保险保留，永不混）
-const KEY = 'dajin_save_v1';
+// localStorage 存档 v2：纪录三分（最高成功带出 / 累计成功带出 / 累计保险保留，永不混）
+// + M2 收藏层：图鉴 collection{itemId: 揭示次数}、成就 achievements[id]、战绩历史 history（最新在前，上限 30）
+
+const KEY = 'dajin_save_v2';
+const KEY_V1 = 'dajin_save_v1';
 const DEFAULTS = {
   bestCarried: 0, totalCarried: 0, totalInsurance: 0,
   runs: 0, evacs: 0, caughts: 0, redRuns: 0, configName: 'B', soundOn: true,
+  collection: {}, achievements: [], history: [],
 };
 
 function loadSave() {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return { ...DEFAULTS };
-    return { ...DEFAULTS, ...JSON.parse(raw) };
-  } catch {
-    return { ...DEFAULTS };
-  }
+    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+    const old = localStorage.getItem(KEY_V1); // v1 → v2 自动迁移（纪录不丢）
+    if (old) {
+      const migrated = { ...DEFAULTS, ...JSON.parse(old) };
+      storeSave(migrated);
+      return migrated;
+    }
+  } catch { /* 解析失败降级新档 */ }
+  return { ...DEFAULTS };
 }
 
 function storeSave(save) {
   try { localStorage.setItem(KEY, JSON.stringify(save)); } catch { /* 容器不支持时降级为内存态 */ }
 }
 
+const ACHIEVEMENTS = [
+  { id: 'first_evac', name: '初次得手', desc: '完成第一次撤离' },
+  { id: 'first_caught', name: '落网体验', desc: '第一次被抓（没事，人人都有）' },
+  { id: 'rating_s', name: 'S 级猎手', desc: '单局评级达到 S' },
+  { id: 'carry_100', name: '单局百万', desc: '单局带出 ≥100 万' },
+  { id: 'red_out', name: '大金到手', desc: '带着一件大金成功撤离' },
+  { id: 'red_caught', name: '煮熟的鸭子', desc: '摸到大金却被抓了' },
+  { id: 'full_bag', name: '满载而归', desc: '背包塞满 20 格并撤离' },
+  { id: 'topsecret_evac', name: '绝密凯旋', desc: '在绝密仓成功撤离' },
+  { id: 'cleared', name: '整仓搬空', desc: '开满 16 格并撤离' },
+  { id: 'total_1000', name: '累计千万', desc: '累计成功带出 ≥1000 万' },
+  { id: 'coll_20', name: '图鉴过半', desc: '点亮 20 件图鉴' },
+  { id: 'coll_40', name: '大收藏家', desc: '点亮全部 40 件图鉴' },
+  { id: 'set_1', name: '成套了', desc: '集齐任意一个套装' },
+];
+
 // 纪录口径：评级/最高纪录只认撤离局带出价值 C（不含加成）；保险保留单独入账
+// 返回 { save, unlocked }：unlocked 为本局新解锁成就（结算页展示用）
 function recordResult(save, result) {
   save.runs += 1;
   if (result.hasRed) save.redRuns += 1;
@@ -711,8 +809,41 @@ function recordResult(save, result) {
     if (result.C > save.bestCarried) save.bestCarried = result.C;
   }
   save.configName = result.config.id;
+  // 图鉴：揭示即点亮并累计次数（被抓/丢弃过的也算摸到过）
+  for (const r of result.reveals ?? []) save.collection[r.itemId] = (save.collection[r.itemId] ?? 0) + 1;
+  // 战绩历史
+  save.history.unshift({
+    t: Date.now(), outcome: result.outcome,
+    value: result.outcome === 'caught' ? result.I : result.C,
+    rating: result.rating, warehouse: result.warehouse.id, config: result.config.id,
+    opens: result.opens, hasRed: result.hasRed,
+  });
+  save.history = save.history.slice(0, 30);
+  // 成就判定（基于入账后的累计状态 + 本局结果）
+  const lit = Object.keys(save.collection).length;
+  const setDone = SETS.some(st => ITEMS.filter(i => i.setId === st.id).every(i => (save.collection[i.id] ?? 0) > 0));
+  const bagCells = (result.items ?? []).reduce((sum, i) => sum + (i.cells?.length ?? i.size ?? 0), 0);
+  const checks = {
+    first_evac: save.evacs >= 1,
+    first_caught: save.caughts >= 1,
+    rating_s: result.rating === 'S',
+    carry_100: result.outcome !== 'caught' && result.C >= 100,
+    red_out: result.outcome !== 'caught' && (result.items ?? []).some(i => i.tier === 5),
+    red_caught: result.outcome === 'caught' && result.hasRed,
+    full_bag: result.outcome !== 'caught' && bagCells >= 20,
+    topsecret_evac: result.outcome !== 'caught' && result.warehouse.id === 'topsecret',
+    cleared: result.outcome === 'cleared',
+    total_1000: save.totalCarried >= 1000,
+    coll_20: lit >= 20,
+    coll_40: lit >= ITEMS.length,
+    set_1: setDone,
+  };
+  const unlocked = [];
+  for (const a of ACHIEVEMENTS) {
+    if (checks[a.id] && !save.achievements.includes(a.id)) { save.achievements.push(a.id); unlocked.push(a); }
+  }
   storeSave(save);
-  return save;
+  return { save, unlocked };
 }
 
 /* ===== src/ads.js ===== */
@@ -883,6 +1014,8 @@ function renderHome() {
   $('rec-total').textContent = `${fmtWan(save.totalCarried)} 万`;
   $('rec-ins').textContent = `${fmtWan(save.totalInsurance)} 万`;
   $('rec-runs').textContent = `${save.evacs} 撤 / ${save.caughts} 抓 · 共 ${save.runs} 局`;
+  $('nav-coll-count').textContent = `(${Object.keys(save.collection).length}/${ITEMS.length})`;
+  $('nav-ach-count').textContent = `(${save.achievements.length}/${ACHIEVEMENTS.length})`;
   document.querySelectorAll('#config-seg .seg-btn').forEach(b => b.classList.toggle('on', b.dataset.cfg === currentConfig));
 }
 document.querySelectorAll('#config-seg .seg-btn').forEach(b =>
@@ -1162,7 +1295,13 @@ $('btn-evac').addEventListener('click', () => {
 // ---------- 结算 ----------
 function finishToResult(result) {
   if (result.outcome !== 'caught') Sfx.evac();
-  if (!recorded) { save = recordResult(save, result); recorded = true; }
+  let unlocked = [], newSeen = [];
+  if (!recorded) {
+    const before = new Set(Object.keys(save.collection));
+    const rr = recordResult(save, result);
+    save = rr.save; unlocked = rr.unlocked; recorded = true;
+    newSeen = [...new Set((result.reveals ?? []).map(r => r.itemId))].filter(id => !before.has(id));
+  }
   const body = $('result-body');
   if (result.outcome === 'caught') {
     const ins = result.insuredItem;
@@ -1188,6 +1327,10 @@ function finishToResult(result) {
       </div>
       <p class="top-item">${result.topItem ? `最贵单品：${result.topItem.icon} ${result.topItem.name}（${TIER_NAMES[result.topItem.tier]}）${fmtWan(result.topItem.value)} 万` : ''}${result.hasRed ? ' · 本局出过大金！' : ''}</p>`;
   }
+  if (unlocked.length || newSeen.length) {
+    body.innerHTML += `<div class="unlock-note">${newSeen.length ? `📖 新点亮图鉴 ${newSeen.length} 件` : ''}${unlocked.map(a => `<div>🏆 成就解锁：${a.name}——${a.desc}</div>`).join('')}</div>`;
+  }
+  renderHome();
   const manifest = drawShareCard($('share-canvas'), result);
   window.__DAJIN_LAST_CARD__ = manifest;
   show('screen-result');
@@ -1215,6 +1358,49 @@ $('btn-sound-run').addEventListener('click', toggleSound);
 applySoundUI();
 
 renderHome(); show('screen-home'); });
+
+// ---------- M2：图鉴 / 成就 / 战绩 ----------
+function collCell(item) {
+  const n = save.collection[item.id] ?? 0;
+  const lit = n > 0;
+  return `<div class="coll-cell ${lit ? 'lit' : 'unlit'}" style="border-color:${TIER_COLORS[item.tier]}"><span class="cc-icon">${lit ? item.icon : '❔'}</span><span class="cc-name">${lit ? item.name : '？？？'}</span>${n > 1 ? `<span class="cc-count">×${n}</span>` : ''}</div>`;
+}
+function renderCollection() {
+  const lit = Object.keys(save.collection).length;
+  $('coll-summary').textContent = `已点亮 ${lit} / ${ITEMS.length} 件 · 摸到过即点亮（含被抓、丢弃的），重复摸到累计次数`;
+  let html = '';
+  for (const st of SETS) {
+    const pr = setProgress(st.id, save.collection);
+    const members = ITEMS.filter(i => i.setId === st.id);
+    html += `<div class="coll-set ${pr.done ? 'done' : ''}"><div class="coll-set-head"><b>${st.name}${pr.done ? ' ✔ 已集齐' : ''}</b><span>${st.desc} · ${pr.lit}/${pr.total}</span></div><div class="coll-grid">${members.map(collCell).join('')}</div></div>`;
+  }
+  for (let t = 5; t >= 0; t--) {
+    const items = ITEMS.filter(i => i.tier === t);
+    html += `<div class="coll-tier-title" style="color:${TIER_COLORS[t]}">${TIER_NAMES[t]} · ${items.filter(i => (save.collection[i.id] ?? 0) > 0).length}/${items.length}</div><div class="coll-grid">${items.map(collCell).join('')}</div>`;
+  }
+  $('coll-body').innerHTML = html;
+}
+function renderAchievements() {
+  $('ach-summary').textContent = `已解锁 ${save.achievements.length} / ${ACHIEVEMENTS.length}`;
+  $('ach-body').innerHTML = ACHIEVEMENTS.map(a => {
+    const has = save.achievements.includes(a.id);
+    return `<div class="ach-row ${has ? '' : 'locked'}"><span class="ach-icon">${has ? '🏆' : '🔒'}</span><span><div class="ach-name">${a.name}</div><div class="ach-desc">${a.desc}</div></span></div>`;
+  }).join('');
+}
+function renderHistory() {
+  if (!save.history.length) { $('hist-body').innerHTML = '<p class="screen-sub">还没有战绩，去开第一局。</p>'; return; }
+  const whName = id => (WAREHOUSES.find(w => w.id === id) ?? {}).name ?? id;
+  $('hist-body').innerHTML = save.history.map(h => {
+    const d = new Date(h.t);
+    const when = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const label = h.outcome === 'caught' ? '被抓' : h.outcome === 'cleared' ? '搬空' : '撤离';
+    return `<div class="hist-row ${h.outcome === 'caught' ? 'caught' : ''}"><span>${label} · ${whName(h.warehouse)} <span class="h-meta">${when} · 开 ${h.opens} 格${h.hasRed ? ' · 出大金' : ''}${h.rating ? ` · ${h.rating} 级` : ''}</span></span><span class="h-val">${fmtWan(h.value)} 万</span></div>`;
+  }).join('');
+}
+$('btn-nav-collection').addEventListener('click', () => { renderCollection(); show('screen-collection'); });
+$('btn-nav-ach').addEventListener('click', () => { renderAchievements(); show('screen-achievements'); });
+$('btn-nav-history').addEventListener('click', () => { renderHistory(); show('screen-history'); });
+document.querySelectorAll('.back-home').forEach(b => b.addEventListener('click', () => { renderHome(); show('screen-home'); }));
 
 // 测试钩子（TECH_SPEC）：返回当前局的纯数据快照
 window.__DAJIN_STATE__ = () => run ? run.snapshot() : { screen: 'home' };
