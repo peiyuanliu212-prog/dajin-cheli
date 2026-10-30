@@ -127,6 +127,29 @@ body { background: var(--bg); color: var(--text); font-family: "PingFang SC", "M
 @keyframes shake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-7px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(3px); } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 
+/* ===== 刺激感补强（ADR-020）===== */
+#vignette { position: fixed; inset: 0; pointer-events: none; z-index: 20; opacity: 0; transition: opacity .45s ease; box-shadow: inset 0 0 90px 30px rgba(229,72,77,.55); }
+#vignette.pulse { animation: vpulse 1.15s ease-in-out infinite; }
+@keyframes vpulse { 0%,100% { opacity: var(--vop, .3); } 50% { opacity: calc(var(--vop, .3) * 0.45); } }
+#vignette.flash { transition: opacity .08s; opacity: 1 !important; }
+body.police { animation: police .16s steps(1) 6; }
+@keyframes police { 0% { box-shadow: inset 0 0 120px 40px rgba(229,72,77,.75); } 50% { box-shadow: inset 0 0 120px 40px rgba(79,157,222,.75); } 100% { box-shadow: inset 0 0 120px 40px rgba(229,72,77,.75); } }
+.cell.searching { animation: searching .5s ease-in-out infinite alternate; background: #2c3624; }
+@keyframes searching { from { transform: scale(1); } to { transform: scale(.94); } }
+#loot-pop { position: fixed; inset: 0; z-index: 25; display: flex; align-items: center; justify-content: center; pointer-events: none; padding: 24px; }
+#loot-pop-inner { text-align: center; border: 2px solid; border-radius: 16px; background: rgba(13,15,11,.93); padding: 26px 34px; animation: lootpop .38s cubic-bezier(.2,1.6,.4,1); max-width: 340px; }
+@keyframes lootpop { 0% { transform: scale(.6); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+#loot-pop .lp-icon { font-size: 64px; display: block; }
+#loot-pop .lp-name { font-size: 23px; font-weight: 800; margin-top: 8px; }
+#loot-pop .lp-tier { font-size: 14px; letter-spacing: 4px; margin-top: 4px; }
+#loot-pop .lp-value { font-size: 30px; color: var(--hazard); font-weight: 800; margin-top: 6px; }
+#loot-pop.t3 #loot-pop-inner { border-color: var(--tier-purple); box-shadow: 0 0 44px rgba(160,108,213,.55); }
+#loot-pop.t4 #loot-pop-inner { border-color: var(--tier-gold); box-shadow: 0 0 60px rgba(245,185,33,.7); }
+#loot-pop.t5 #loot-pop-inner { border-color: var(--tier-red); box-shadow: 0 0 80px rgba(239,62,74,.85); }
+#loot-pop.t5 { background: radial-gradient(ellipse at center, rgba(239,62,74,.22), rgba(13,15,11,.55) 75%); }
+.sound-toggle { display: block; margin: 12px auto 0; }
+.sound-mini { background: transparent; border: 1px solid var(--line); border-radius: 6px; color: var(--text); font-size: 13px; padding: 1px 7px; cursor: pointer; }
+
 </style>
 </head>
 <body>
@@ -152,7 +175,8 @@ body { background: var(--bg); color: var(--text); font-family: "PingFang SC", "M
       </div>
     </div>
     <button id="btn-start" class="btn-primary">开始寻宝</button>
-    <p class="fineprint">规则全透明：警戒每开一格 +5~9（按仓库），92 起进入赌博区，95 起下一格必被抓。概率与数值见随附文档。</p>
+    <button id="btn-sound-home" class="btn-ghost sound-toggle">🔊 音效：开</button>
+    <p class="fineprint">规则全透明：警戒每开一格 +5~9（按仓库），越深巡逻越密；下一格风险按档明示（安全/低危/中危/高危/极危/必抓），爆表被抓只剩保险格一件。</p>
   </section>
 
   <!-- 选仓 -->
@@ -174,7 +198,8 @@ body { background: var(--bg); color: var(--text); font-family: "PingFang SC", "M
       <div class="alert-head">
         <span id="alert-stage">平稳</span>
         <span id="alert-num">警戒 0</span>
-        <span id="alert-next">下一格被抓概率 0%</span>
+        <span id="alert-next">下一格风险：安全</span>
+        <button id="btn-sound-run" class="sound-mini" title="音效开关">🔊</button>
       </div>
       <div class="alert-bar"><div id="alert-fill"></div><i class="tick" style="left:70%"></i><i class="tick danger" id="tick-gamble" style="left:92%"></i><i class="tick danger" id="tick-certain" style="left:95%"></i></div>
       <p id="alert-warn" class="alert-warn"></p>
@@ -227,6 +252,8 @@ body { background: var(--bg); color: var(--text); font-family: "PingFang SC", "M
     </div>
   </section>
 
+  <div id="vignette"></div>
+  <div id="loot-pop" class="hidden"><div id="loot-pop-inner"></div></div>
 </div>
 <script>
 
@@ -239,8 +266,9 @@ const SHARED = {
   backpackRows: 4,
   alertMax: 100,
   scareFromAlert: 60,
-  scareChance: 0.2,
+  scareChance: 0.3,
   scareAdd: 4,
+  depthAlertBonus: [0, 0, 1], // 深层（第 11 格起）每开一格警戒额外 +1：深区巡逻更密（ADR-020）
   discardAlertPerItem: 5,
   earlyEvacBonusBelowAlert: 40,
   earlyEvacBonusRate: 0.05,
@@ -522,12 +550,13 @@ class Run {
     return false;
   }
 
-  // 本格被抓概率（UI 明示用）：增量均匀整数 [alertMin, alertMax]
+  // 本格被抓概率（UI 风险档用）：增量均匀整数 [alertMin, alertMax] + 当前深度区警戒加成
   nextCaughtProb() {
     const { alertMin, alertMax } = this.warehouse;
+    const bonus = SHARED.depthAlertBonus[Math.min(2, Math.floor(this.opens / 5))];
     const n = alertMax - alertMin + 1;
     let hit = 0;
-    for (let d = alertMin; d <= alertMax; d++) if (this.alert + d >= SHARED.alertMax) hit++;
+    for (let d = alertMin; d <= alertMax; d++) if (this.alert + d + bonus >= SHARED.alertMax) hit++;
     return hit / n;
   }
 
@@ -535,9 +564,10 @@ class Run {
     if (this.phase !== 'playing' || this.cellsOpened[idx]) return { type: 'ignored' };
     // R1-⑥：警戒已爆表时再开格，直接被抓
     if (this.alert >= SHARED.alertMax) return this.doCaught(0);
-    // R1-②③：先抽增量并累加
+    // R1-②③：先抽增量并累加（深层区另有固定加成，计入 inc 一并展示）
     const { alertMin, alertMax } = this.warehouse;
-    const inc = alertMin + Math.floor(this.streams.alert() * (alertMax - alertMin + 1));
+    const depthBonus = SHARED.depthAlertBonus[Math.min(2, Math.floor(this.opens / 5))];
+    const inc = alertMin + Math.floor(this.streams.alert() * (alertMax - alertMin + 1)) + depthBonus;
     this.alert += inc;
     // R1-④：爆表当场被抓，本格不揭示
     if (this.alert >= SHARED.alertMax) return this.doCaught(inc);
@@ -645,7 +675,7 @@ function rateOf(carried, th) {
 const KEY = 'dajin_save_v1';
 const DEFAULTS = {
   bestCarried: 0, totalCarried: 0, totalInsurance: 0,
-  runs: 0, evacs: 0, caughts: 0, redRuns: 0, configName: 'B',
+  runs: 0, evacs: 0, caughts: 0, redRuns: 0, configName: 'B', soundOn: true,
 };
 
 function loadSave() {
@@ -774,6 +804,49 @@ function drawShareCard(canvas, result) {
   return { width: 720, height: 960, texts, mainValue, outcome: result.outcome };
 }
 
+/* ===== src/ui/sound.js ===== */
+// 合成音效（WebAudio，零音频资源）：开格/出货/脚步声/被抓/撤离
+// 所有声音都由用户点击触发调用，符合浏览器自动播放策略；soundOn 存档控制
+let ctx = null;
+let enabled = true;
+
+function setSoundEnabled(v) { enabled = !!v; }
+function soundEnabled() { return enabled; }
+
+function ac() {
+  if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; } }
+  if (ctx.state === 'suspended') ctx.resume();
+  return ctx;
+}
+
+function tone(freq, dur, { type = 'square', gain = 0.06, at = 0, slideTo = null } = {}) {
+  if (!enabled) return;
+  const c = ac(); if (!c) return;
+  const t0 = c.currentTime + at;
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t0);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+  g.gain.setValueAtTime(gain, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g).connect(c.destination);
+  o.start(t0); o.stop(t0 + dur + 0.02);
+}
+
+const Sfx = {
+  click() { tone(640, 0.05, { gain: 0.04 }); },
+  searching() { tone(220, 0.09, { type: 'triangle', gain: 0.03 }); tone(190, 0.09, { type: 'triangle', gain: 0.03, at: 0.12 }); },
+  reveal(tier) {
+    const base = 320 + tier * 70;
+    tone(base, 0.09, { gain: 0.05 });
+    tone(base * 1.5, 0.14, { gain: 0.06, at: 0.08 });
+    if (tier >= 4) { tone(base * 2, 0.22, { gain: 0.07, at: 0.18 }); tone(base * 2.5, 0.3, { gain: 0.06, at: 0.3 }); }
+  },
+  scare() { tone(170, 0.28, { type: 'sawtooth', gain: 0.05, slideTo: 85 }); },
+  discard() { tone(130, 0.12, { type: 'triangle', gain: 0.07, slideTo: 70 }); },
+  caught() { for (let i = 0; i < 3; i++) { tone(520, 0.16, { type: 'sawtooth', gain: 0.06, at: i * 0.34 }); tone(392, 0.16, { type: 'sawtooth', gain: 0.06, at: i * 0.34 + 0.17 }); } },
+  evac() { [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.13, { gain: 0.05, at: i * 0.09 })); },
+};
+
 /* ===== src/main.js ===== */
 // UI 层：四屏切换、HUD、揭示动画、满仓处置、双结算、分享卡
 // 规则与数值全部来自 sim 层与 config，本文件不写任何概率/判定。
@@ -781,7 +854,7 @@ function drawShareCard(canvas, result) {
 const params = new URLSearchParams(location.search);
 const FAST = params.get('fast') === '1';
 const SEED_PARAM = params.get('seed') ? Number(params.get('seed')) : null;
-const REVEAL_MS = [350, 450, 600, 800, 1100, 1500];
+const REVEAL_MS = [550, 700, 900, 1200, 1600, 2100]; // 揭示节奏放慢（ADR-020）：每格开出要有分量
 const $ = id => document.getElementById(id);
 
 let save = loadSave();
@@ -807,9 +880,31 @@ function renderHome() {
   document.querySelectorAll('#config-seg .seg-btn').forEach(b => b.classList.toggle('on', b.dataset.cfg === currentConfig));
 }
 document.querySelectorAll('#config-seg .seg-btn').forEach(b =>
-  b.addEventListener('click', () => { currentConfig = b.dataset.cfg; save.configName = currentConfig; renderHome(); }));
+  b.addEventListener('click', () => { currentConfig = b.dataset.cfg; save.configName = currentConfig; // ---------- 音效开关 ----------
+function applySoundUI() {
+  setSoundEnabled(save.soundOn);
+  $('btn-sound-home').textContent = save.soundOn ? '🔊 音效：开' : '🔇 音效：关';
+  $('btn-sound-run').textContent = save.soundOn ? '🔊' : '🔇';
+}
+function toggleSound() { save.soundOn = !save.soundOn; storeSave(save); applySoundUI(); if (save.soundOn) Sfx.click(); }
+$('btn-sound-home').addEventListener('click', toggleSound);
+$('btn-sound-run').addEventListener('click', toggleSound);
+applySoundUI();
+
+renderHome(); }));
 $('btn-start').addEventListener('click', () => { renderWarehouses(); show('screen-warehouse'); });
-$('btn-wh-back').addEventListener('click', () => { renderHome(); show('screen-home'); });
+$('btn-wh-back').addEventListener('click', () => { // ---------- 音效开关 ----------
+function applySoundUI() {
+  setSoundEnabled(save.soundOn);
+  $('btn-sound-home').textContent = save.soundOn ? '🔊 音效：开' : '🔇 音效：关';
+  $('btn-sound-run').textContent = save.soundOn ? '🔊' : '🔇';
+}
+function toggleSound() { save.soundOn = !save.soundOn; storeSave(save); applySoundUI(); if (save.soundOn) Sfx.click(); }
+$('btn-sound-home').addEventListener('click', toggleSound);
+$('btn-sound-run').addEventListener('click', toggleSound);
+applySoundUI();
+
+renderHome(); show('screen-home'); });
 
 // ---------- 选仓 ----------
 function renderWarehouses() {
@@ -870,18 +965,28 @@ function renderRun(prevValue) {
   const a = run.alert;
   $('alert-num').textContent = `警戒 ${a}`;
   const prob01 = run.nextCaughtProb();
-  const prob = Math.round(prob01 * 100);
-  $('alert-next').textContent = `下一格被抓概率 ${prob}%`;
-  // 阶段按本仓增量区间的真实概率划分（各仓赌博区/必抓区起点不同，禁止写死 92/95）
-  const stage = a >= 100 ? '爆表' : prob01 >= 1 ? '必抓区' : prob01 > 0 ? '赌博区' : a >= 70 ? '警觉' : a >= 40 ? '察觉' : '平稳';
+  const band = riskBand(prob01);
+  $('alert-next').textContent = `下一格风险：${band}`;
+  // 阶段按本仓真实概率分档（ADR-020 改风险档显示：不给精确百分比，留不确定性才有偷感）
+  const stage = a >= 100 ? '爆表' : prob01 >= 1 ? '必抓区' : prob01 > 0 ? `${band}区` : a >= 70 ? '警觉' : a >= 40 ? '察觉' : '平稳';
   $('alert-stage').textContent = stage;
   const fill = $('alert-fill');
   fill.style.width = `${Math.min(100, a)}%`;
-  fill.style.background = (a >= 100 || prob01 >= 1) ? 'var(--danger)' : prob01 > 0 ? '#e07b39' : a >= 70 ? 'var(--hazard)' : a >= 40 ? 'var(--khaki)' : 'var(--olive)';
+  fill.style.background = (a >= 100 || prob01 >= 1) ? 'var(--danger)' : prob01 > 0.5 ? '#e5484d' : prob01 > 0 ? '#e07b39' : a >= 70 ? 'var(--hazard)' : a >= 40 ? 'var(--khaki)' : 'var(--olive)';
   $('alert-warn').textContent =
     a >= 100 ? '⚠ 警戒已爆表：再开任何一格都会被抓，立刻撤离！' :
-    prob01 >= 1 ? '⚠ 必抓区：现在开格 100% 被抓，先撤离！' :
-    prob01 > 0 ? `赌博区：下一格被抓概率 ${prob}%，想清楚再点。` : '';
+    prob01 >= 1 ? '⚠ 必抓区：现在开格必定被抓，先撤离！' :
+    prob01 > 0.5 ? `已进入${band}区：下一格大概率被抓，见好就收！` :
+    prob01 > 0 ? `已进入${band}区：再开一格有被抓的风险。` : '';
+  // 危险氛围：进入风险区后屏幕边缘泛红并呼吸
+  const vg = $('vignette');
+  if (prob01 > 0) {
+    const vop = prob01 >= 1 ? 0.9 : prob01 > 0.5 ? 0.6 : 0.32;
+    vg.style.setProperty('--vop', vop);
+    vg.style.opacity = vop;
+    vg.classList.toggle('pulse', prob01 < 1);
+    if (prob01 >= 1) vg.classList.remove('pulse');
+  } else { vg.style.opacity = 0; vg.classList.remove('pulse'); }
   // 背包
   const bag = $('bag');
   bag.innerHTML = '';
@@ -913,20 +1018,36 @@ function renderCellOpened(idx, item) {
 async function onCell(idx) {
   if (busy || !run || run.phase !== 'playing' || run.cellsOpened[idx]) return;
   busy = true;
+  Sfx.click();
+  const cellEl = document.querySelector(`.cell[data-cell="${idx}"]`);
   const prevValue = run.bagValue();
   const ev = run.openCell(idx);
   if (ev.type === 'caught') {
+    if (cellEl) { cellEl.classList.add('searching'); cellEl.innerHTML = '🔍<small>翻找中</small>'; }
+    Sfx.searching();
+    await delay(600);
+    document.body.classList.add('police');
+    Sfx.caught();
+    if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
     document.getElementById('app').classList.add('shake');
     setEvent(`警戒爆表！巡逻队冲进来了——本格没来得及看。`, true);
     renderRun(prevValue);
-    await delay(700);
+    await delay(950);
+    document.body.classList.remove('police');
     document.getElementById('app').classList.remove('shake');
     busy = false;
     return finishToResult(ev.result);
   }
   if (ev.type === 'item' || ev.type === 'full') {
-    renderCellOpened(idx, ev.item);
+    if (cellEl) { cellEl.classList.add('searching'); cellEl.innerHTML = '🔍<small>翻找中</small>'; }
+    Sfx.searching();
     await delay(REVEAL_MS[ev.item.tier]);
+    if (cellEl) cellEl.classList.remove('searching');
+    renderCellOpened(idx, ev.item);
+    Sfx.reveal(ev.item.tier);
+    if (ev.item.tier >= 3) showLootPop(ev.item);
+    if (ev.item.tier >= 4 && navigator.vibrate) navigator.vibrate(ev.item.tier === 5 ? [60, 40, 90] : 45);
+    if (ev.scared) { Sfx.scare(); flashVignette(); }
     const scareTxt = ev.scared ? ' 巡逻脚步声突然变近，警戒额外 +4！' : '';
     if (ev.type === 'item') {
       setEvent(`${ev.item.icon} ${ev.item.name}（${TIER_NAMES[ev.item.tier]}）${fmtWan(ev.item.value)} 万，已入包。警戒 +${ev.inc}。${scareTxt}`, false);
@@ -940,6 +1061,31 @@ async function onCell(idx) {
       openPending();
     }
   }
+}
+
+// 出货展示（紫以上）：仪式感弹层，大金全屏泛光；fast 模式跳过
+let lootTimer = null;
+function showLootPop(item) {
+  if (FAST) return;
+  const pop = $('loot-pop'), inner = $('loot-pop-inner');
+  pop.className = `t${item.tier}`;
+  inner.innerHTML = `<span class="lp-icon">${item.icon}</span><div class="lp-name">${item.name}</div><div class="lp-tier" style="color:${TIER_COLORS[item.tier]}">${item.tier === 5 ? '★ 大 金 ★' : TIER_NAMES[item.tier]}</div><div class="lp-value">${fmtWan(item.value)} 万</div>`;
+  pop.classList.remove('hidden');
+  clearTimeout(lootTimer);
+  lootTimer = setTimeout(() => pop.classList.add('hidden'), item.tier === 5 ? 2100 : 1300);
+}
+function flashVignette() {
+  const v = $('vignette');
+  v.classList.add('flash');
+  setTimeout(() => v.classList.remove('flash'), 280);
+}
+function riskBand(p) {
+  if (p <= 0) return '安全';
+  if (p <= 0.25) return '低危';
+  if (p <= 0.5) return '中危';
+  if (p <= 0.75) return '高危';
+  if (p < 1) return '极危';
+  return '必抓';
 }
 
 // ---------- 满仓处置 ----------
@@ -978,6 +1124,7 @@ function renderDiscard() {
 $('btn-discard-confirm').addEventListener('click', () => {
   if (!discardSel.size) return;
   const prevValue = run.bagValue();
+  Sfx.discard();
   const res = run.discard([...discardSel]);
   if (run.phase === 'playing') {
     $('pending-modal').classList.add('hidden');
@@ -1009,6 +1156,7 @@ $('btn-evac').addEventListener('click', () => {
 
 // ---------- 结算 ----------
 function finishToResult(result) {
+  if (result.outcome !== 'caught') Sfx.evac();
   if (!recorded) { save = recordResult(save, result); recorded = true; }
   const body = $('result-body');
   if (result.outcome === 'caught') {
@@ -1050,10 +1198,32 @@ $('btn-share').addEventListener('click', () => {
 });
 $('btn-again').addEventListener('click', () => startRun(run.warehouse));
 $('btn-result-warehouse').addEventListener('click', () => { renderWarehouses(); show('screen-warehouse'); });
-$('btn-result-home').addEventListener('click', () => { renderHome(); show('screen-home'); });
+$('btn-result-home').addEventListener('click', () => { // ---------- 音效开关 ----------
+function applySoundUI() {
+  setSoundEnabled(save.soundOn);
+  $('btn-sound-home').textContent = save.soundOn ? '🔊 音效：开' : '🔇 音效：关';
+  $('btn-sound-run').textContent = save.soundOn ? '🔊' : '🔇';
+}
+function toggleSound() { save.soundOn = !save.soundOn; storeSave(save); applySoundUI(); if (save.soundOn) Sfx.click(); }
+$('btn-sound-home').addEventListener('click', toggleSound);
+$('btn-sound-run').addEventListener('click', toggleSound);
+applySoundUI();
+
+renderHome(); show('screen-home'); });
 
 // 测试钩子（TECH_SPEC）：返回当前局的纯数据快照
 window.__DAJIN_STATE__ = () => run ? run.snapshot() : { screen: 'home' };
+
+// ---------- 音效开关 ----------
+function applySoundUI() {
+  setSoundEnabled(save.soundOn);
+  $('btn-sound-home').textContent = save.soundOn ? '🔊 音效：开' : '🔇 音效：关';
+  $('btn-sound-run').textContent = save.soundOn ? '🔊' : '🔇';
+}
+function toggleSound() { save.soundOn = !save.soundOn; storeSave(save); applySoundUI(); if (save.soundOn) Sfx.click(); }
+$('btn-sound-home').addEventListener('click', toggleSound);
+$('btn-sound-run').addEventListener('click', toggleSound);
+applySoundUI();
 
 renderHome();
 
