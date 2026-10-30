@@ -176,7 +176,7 @@ body.police { animation: police .16s steps(1) 6; }
     </div>
     <button id="btn-start" class="btn-primary">开始寻宝</button>
     <button id="btn-sound-home" class="btn-ghost sound-toggle">🔊 音效：开</button>
-    <p class="fineprint">规则全透明：警戒每开一格 +5~9（按仓库），越深巡逻越密；下一格风险按档明示（安全/低危/中危/高危/极危/必抓），爆表被抓只剩保险格一件。</p>
+    <p class="fineprint">规则全透明：警戒每开一格 +5~9（按仓库），越深巡逻越密；下一格风险按档明示（安全/低危/中危/高危/极危/必抓），警戒越高被抓概率越大，被抓只剩保险格一件。</p>
   </section>
 
   <!-- 选仓 -->
@@ -264,7 +264,8 @@ const SHARED = {
   cellsPerWarehouse: 16,
   backpackCols: 5,
   backpackRows: 4,
-  alertMax: 100,
+  // 被抓判定坡道（ADR-021）：[增后警戒下限, 本格被抓概率]，取满足的最高档；<85 为 0，>=120 为 1
+  catchRamp: [[85, 0.10], [90, 0.20], [95, 0.35], [100, 0.55], [110, 0.75], [120, 1]],
   scareFromAlert: 60,
   scareChance: 0.3,
   scareAdd: 4,
@@ -285,6 +286,12 @@ const SHARED = {
   // 估值带（万）
   valueBandsWan: { 0: [0.1, 0.5], 1: [0.5, 0.8], 2: [0.8, 2], 3: [2, 8], 4: [10, 30], 5: [80, 200] },
 };
+
+function catchProbAt(alert) {
+  let p = 0;
+  for (const [t, r] of SHARED.catchRamp) if (alert >= t) p = r;
+  return p;
+}
 
 const TIER_NAMES = ['粗货', '良品', '稀有', '史诗', '传说', '大金'];
 const TIER_KEYS = ['white', 'green', 'blue', 'purple', 'gold', 'red'];
@@ -355,7 +362,7 @@ function hashSeed(str) {
   return h >>> 0;
 }
 
-// 六条流：档位/估值/占格/警戒/惊吓/选物，互不干扰
+// 七条流：档位/估值/占格/警戒/惊吓/选物/坡道判定，互不干扰
 function makeStreams(seed) {
   const base = (seed >>> 0) * 100000;
   return {
@@ -365,6 +372,7 @@ function makeStreams(seed) {
     alert: mulberry32(base + 4),
     scare: mulberry32(base + 5),
     item: mulberry32(base + 6),
+    luck: mulberry32(base + 7),
   };
 }
 
@@ -507,7 +515,7 @@ function genItem(streams, config, warehouse, opens) {
 
 /* ===== src/sim/state.js ===== */
 // 局状态机（纯逻辑、无 DOM）：选仓后创建，phase: playing -> pending(满仓待处置) -> over
-// 规则口径：V0.3 冻结版 GAME_RULES（R1 判定、R2 保险标记、R3 摆放/重排、丢弃 +5/件）
+// 规则口径：GAME_RULES（R1 时序、R2 保险标记、R3 摆放/重排、丢弃 +5/件；被抓判定为概率坡道，ADR-021）
 
 class Run {
   constructor({ config, warehouse, seed }) {
@@ -550,27 +558,25 @@ class Run {
     return false;
   }
 
-  // 本格被抓概率（UI 风险档用）：增量均匀整数 [alertMin, alertMax] + 当前深度区警戒加成
+  // 本格被抓概率期望（UI 风险档用）：对增量均匀分布求坡道概率的期望
   nextCaughtProb() {
     const { alertMin, alertMax } = this.warehouse;
     const bonus = SHARED.depthAlertBonus[Math.min(2, Math.floor(this.opens / 5))];
     const n = alertMax - alertMin + 1;
-    let hit = 0;
-    for (let d = alertMin; d <= alertMax; d++) if (this.alert + d + bonus >= SHARED.alertMax) hit++;
-    return hit / n;
+    let sum = 0;
+    for (let d = alertMin; d <= alertMax; d++) sum += catchProbAt(this.alert + d + bonus);
+    return sum / n;
   }
 
   openCell(idx) {
     if (this.phase !== 'playing' || this.cellsOpened[idx]) return { type: 'ignored' };
-    // R1-⑥：警戒已爆表时再开格，直接被抓
-    if (this.alert >= SHARED.alertMax) return this.doCaught(0);
     // R1-②③：先抽增量并累加（深层区另有固定加成，计入 inc 一并展示）
     const { alertMin, alertMax } = this.warehouse;
     const depthBonus = SHARED.depthAlertBonus[Math.min(2, Math.floor(this.opens / 5))];
     const inc = alertMin + Math.floor(this.streams.alert() * (alertMax - alertMin + 1)) + depthBonus;
     this.alert += inc;
-    // R1-④：爆表当场被抓，本格不揭示
-    if (this.alert >= SHARED.alertMax) return this.doCaught(inc);
+    // 坡道判定（ADR-021）：按增后警戒掷骰，掷中当场被抓、本格不揭示；警戒可超过 100
+    { const p = catchProbAt(this.alert); if (p > 0 && this.streams.luck() < p) return this.doCaught(inc); }
     // R1-⑤：揭示
     this.cellsOpened[idx] = true;
     this.opens++;
@@ -929,9 +935,9 @@ function startRun(warehouse) {
     `<button class="cell unopened" data-cell="${i}">📦<small>${i + 1} 号格</small></button>`).join('');
   document.querySelectorAll('.cell').forEach(c => c.addEventListener('click', () => onCell(Number(c.dataset.cell))));
   $('pending-modal').classList.add('hidden');
-  // 警戒条刻度按本仓增量区间定位：赌博区起点 = 100-最大增量，必抓区起点 = 100-最小增量
-  $('tick-gamble').style.left = `${100 - warehouse.alertMax}%`;
-  $('tick-certain').style.left = `${100 - warehouse.alertMin}%`;
+  // 警戒条刻度：风险线 = 从该警戒起，最大增量可达坡道起点 85（ADR-021）；必抓线在条外（>=111），隐藏
+  $('tick-gamble').style.left = `${85 - warehouse.alertMax}%`;
+  $('tick-certain').style.display = 'none';
   setEvent('点任意一格开始搜。越往深处，好货越多。', false);
   renderRun(0);
   show('screen-run');
@@ -968,13 +974,12 @@ function renderRun(prevValue) {
   const band = riskBand(prob01);
   $('alert-next').textContent = `下一格风险：${band}`;
   // 阶段按本仓真实概率分档（ADR-020 改风险档显示：不给精确百分比，留不确定性才有偷感）
-  const stage = a >= 100 ? '爆表' : prob01 >= 1 ? '必抓区' : prob01 > 0 ? `${band}区` : a >= 70 ? '警觉' : a >= 40 ? '察觉' : '平稳';
+  const stage = prob01 >= 1 ? '必抓区' : prob01 > 0 ? `${band}区` : a >= 70 ? '警觉' : a >= 40 ? '察觉' : '平稳';
   $('alert-stage').textContent = stage;
   const fill = $('alert-fill');
   fill.style.width = `${Math.min(100, a)}%`;
   fill.style.background = (a >= 100 || prob01 >= 1) ? 'var(--danger)' : prob01 > 0.5 ? '#e5484d' : prob01 > 0 ? '#e07b39' : a >= 70 ? 'var(--hazard)' : a >= 40 ? 'var(--khaki)' : 'var(--olive)';
   $('alert-warn').textContent =
-    a >= 100 ? '⚠ 警戒已爆表：再开任何一格都会被抓，立刻撤离！' :
     prob01 >= 1 ? '⚠ 必抓区：现在开格必定被抓，先撤离！' :
     prob01 > 0.5 ? `已进入${band}区：下一格大概率被抓，见好就收！` :
     prob01 > 0 ? `已进入${band}区：再开一格有被抓的风险。` : '';
@@ -1030,7 +1035,7 @@ async function onCell(idx) {
     Sfx.caught();
     if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
     document.getElementById('app').classList.add('shake');
-    setEvent(`警戒爆表！巡逻队冲进来了——本格没来得及看。`, true);
+    setEvent(`巡逻队冲进来了——被逮个正着！本格没来得及看。`, true);
     renderRun(prevValue);
     await delay(950);
     document.body.classList.remove('police');
@@ -1163,7 +1168,7 @@ function finishToResult(result) {
     const ins = result.insuredItem;
     body.innerHTML = `
       <div class="result-head lose"><div class="big">被 抓 了</div></div>
-      <p class="result-sub">${result.warehouse.name} · ${result.config.label} · 开了 ${result.opens} 格，警戒爆表</p>
+      <p class="result-sub">${result.warehouse.name} · ${result.config.label} · 开了 ${result.opens} 格，终局警戒 ${result.alert}</p>
       <div class="card ledger">
         <div class="row"><span>搜获总值</span><b>${fmtWan(result.G)} 万</b></div>
         <div class="row"><span>被没收</span><b>-${fmtWan(result.G - result.I)} 万</b></div>
