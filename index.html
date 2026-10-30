@@ -176,7 +176,7 @@ body { background: var(--bg); color: var(--text); font-family: "PingFang SC", "M
         <span id="alert-num">警戒 0</span>
         <span id="alert-next">下一格被抓概率 0%</span>
       </div>
-      <div class="alert-bar"><div id="alert-fill"></div><i class="tick" style="left:70%"></i><i class="tick danger" style="left:92%"></i><i class="tick danger" style="left:95%"></i></div>
+      <div class="alert-bar"><div id="alert-fill"></div><i class="tick" style="left:70%"></i><i class="tick danger" id="tick-gamble" style="left:92%"></i><i class="tick danger" id="tick-certain" style="left:95%"></i></div>
       <p id="alert-warn" class="alert-warn"></p>
       <p class="depth-hint">越深入仓库，高品质物资出现率越高，危险也在增加。</p>
     </div>
@@ -277,10 +277,11 @@ const CONFIGS = {
 const DEFAULT_CONFIG = 'B';
 
 // 仓库难度：weightMult 放大紫/金/红（公式同深度梯度），alertMin/Max 为本仓警戒增量区间
+// 2026-10-30 难度模拟定版（ADR-019）：绝密仓警戒由暂定 +6~9 校准为 +7~9，其余两仓暂定值验证通过转正
 const WAREHOUSES = [
   { id: 'normal', name: '普通仓', tag: '城郊物流园 · 废弃分仓', weightMult: 1, alertMin: 5, alertMax: 8, hint: '巡逻稀疏，货色一般' },
   { id: 'secret', name: '机密仓', tag: '港区保税仓 · 夜间无人', weightMult: 1.4, alertMin: 5, alertMax: 9, hint: '好货概率↑，警戒涨得快' },
-  { id: 'topsecret', name: '绝密仓', tag: '军供转运站 · 旧库房', weightMult: 1.9, alertMin: 6, alertMax: 9, hint: '大金温床，巡逻最密' },
+  { id: 'topsecret', name: '绝密仓', tag: '军供转运站 · 旧库房', weightMult: 1.9, alertMin: 7, alertMax: 9, hint: '大金温床，巡逻最密' },
 ];
 
 // 把紫/金/红权重乘以 mult，增加量从白/绿按原比例扣除，蓝不变，结果归一
@@ -833,6 +834,9 @@ function startRun(warehouse) {
     `<button class="cell unopened" data-cell="${i}">📦<small>${i + 1} 号格</small></button>`).join('');
   document.querySelectorAll('.cell').forEach(c => c.addEventListener('click', () => onCell(Number(c.dataset.cell))));
   $('pending-modal').classList.add('hidden');
+  // 警戒条刻度按本仓增量区间定位：赌博区起点 = 100-最大增量，必抓区起点 = 100-最小增量
+  $('tick-gamble').style.left = `${100 - warehouse.alertMax}%`;
+  $('tick-certain').style.left = `${100 - warehouse.alertMin}%`;
   setEvent('点任意一格开始搜。越往深处，好货越多。', false);
   renderRun(0);
   show('screen-run');
@@ -865,17 +869,19 @@ function renderRun(prevValue) {
   // 警戒
   const a = run.alert;
   $('alert-num').textContent = `警戒 ${a}`;
-  const prob = Math.round(run.nextCaughtProb() * 100);
+  const prob01 = run.nextCaughtProb();
+  const prob = Math.round(prob01 * 100);
   $('alert-next').textContent = `下一格被抓概率 ${prob}%`;
-  const stage = a >= 100 ? '爆表' : a >= 95 ? '必抓区' : a >= 92 ? '赌博区' : a >= 70 ? '警觉' : a >= 40 ? '察觉' : '平稳';
+  // 阶段按本仓增量区间的真实概率划分（各仓赌博区/必抓区起点不同，禁止写死 92/95）
+  const stage = a >= 100 ? '爆表' : prob01 >= 1 ? '必抓区' : prob01 > 0 ? '赌博区' : a >= 70 ? '警觉' : a >= 40 ? '察觉' : '平稳';
   $('alert-stage').textContent = stage;
   const fill = $('alert-fill');
   fill.style.width = `${Math.min(100, a)}%`;
-  fill.style.background = a >= 92 ? 'var(--danger)' : a >= 70 ? 'var(--hazard)' : a >= 40 ? 'var(--khaki)' : 'var(--olive)';
+  fill.style.background = (a >= 100 || prob01 >= 1) ? 'var(--danger)' : prob01 > 0 ? '#e07b39' : a >= 70 ? 'var(--hazard)' : a >= 40 ? 'var(--khaki)' : 'var(--olive)';
   $('alert-warn').textContent =
     a >= 100 ? '⚠ 警戒已爆表：再开任何一格都会被抓，立刻撤离！' :
-    a >= 95 ? '⚠ 必抓区：现在开格 100% 被抓，先撤离！' :
-    a >= 92 ? `赌博区：下一格被抓概率 ${prob}%，想清楚再点。` : '';
+    prob01 >= 1 ? '⚠ 必抓区：现在开格 100% 被抓，先撤离！' :
+    prob01 > 0 ? `赌博区：下一格被抓概率 ${prob}%，想清楚再点。` : '';
   // 背包
   const bag = $('bag');
   bag.innerHTML = '';
