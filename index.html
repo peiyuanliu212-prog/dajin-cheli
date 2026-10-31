@@ -195,6 +195,8 @@ body.police { animation: police .16s steps(1) 6; }
 .mode-line small { display: block; opacity: .7; font-size: 12px; margin-top: 2px; }
 .shop-row.boost { border-color: rgba(212,160,23,.55); }
 
+.share-preview { width: 100%; border-radius: 12px; margin-top: 10px; }
+
 </style>
 </head>
 <body>
@@ -307,6 +309,8 @@ body.police { animation: police .16s steps(1) 6; }
     <div id="result-body"></div>
     <div class="modal-btns"><button id="btn-chain" class="btn-primary hidden" style="flex:1">🔗 继续下一仓</button></div>
     <canvas id="share-canvas" width="720" height="960"></canvas>
+    <img id="share-preview" class="share-preview hidden" alt="战绩图预览">
+    <p id="share-hint" class="post-note hidden">长按图片即可保存战绩图</p>
     <div class="modal-btns">
       <button id="btn-share" class="btn-ghost">保存战绩图</button>
       <button id="btn-post" class="btn-ghost hidden">📣 发帖晒战绩</button>
@@ -1355,6 +1359,10 @@ function show(screenId) {
 }
 const delay = ms => FAST ? Promise.resolve() : new Promise(r => setTimeout(r, ms));
 
+// DOM 构建助手（平台过检口径：动态内容一律 createElement + textContent，不走 HTML 字符串解析）
+function mk(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function ledgerRow(label, val, cls) { const r = mk('div', cls || 'row'); r.append(mk('span', null, label), mk('b', null, val)); return r; }
+
 // ---------- 首页 ----------
 function renderHome() {
   $('btn-continue').classList.toggle('hidden', !readRunCheckpoint());
@@ -1366,7 +1374,7 @@ function renderHome() {
   $('nav-ach-count').textContent = `(${save.achievements.length}/${ACHIEVEMENTS.length})`;
   const v = save.vouchers ?? {};
   const vtxt = ((v.secret ?? 0) + (v.topsecret ?? 0)) > 0 ? ` · 🎟 体验券 机密×${v.secret ?? 0} / 绝密×${v.topsecret ?? 0}` : '';
-  $('econ-line').innerHTML = `🪙 仓币 <b>${save.coins ?? 0}</b>${vtxt}`;
+  $('econ-line').replaceChildren(document.createTextNode('🪙 仓币 '), mk('b', null, String(save.coins ?? 0)), document.createTextNode(vtxt));
   document.querySelectorAll('#config-seg .seg-btn').forEach(b => b.classList.toggle('on', b.dataset.cfg === currentConfig));
 }
 document.querySelectorAll('#config-seg .seg-btn').forEach(b =>
@@ -1453,18 +1461,24 @@ function renderWarehouses() {
   $('wh-hint').textContent = chainNextLeg > 1
     ? `🔗 连锁进行中：下一仓是第 ${chainNextLeg} 仓（仓币倍率 ×${chainMultAt(chainNextLeg)}，每格警戒 +${chainNextLeg - 1}）· 🪙 仓币 ${save.coins}`
     : `🪙 仓币 ${save.coins} · 撤离按本局承担的风险折算仓币；高仓收门票，有体验券先用券`;
-  $('warehouse-list').innerHTML = WAREHOUSES.map((w, i) => {
+  const whList = $('warehouse-list');
+  whList.replaceChildren();
+  WAREHOUSES.forEach((w, i) => {
     const fee = entryFeeOf(w.id);
     const hasVoucher = (save.vouchers[w.id] ?? 0) > 0;
     const poor = fee > 0 && !hasVoucher && save.coins < fee;
     const feeTxt = fee <= 0 ? '入场免费' : hasVoucher ? `入场费 ${fee} 🪙（有体验券 🎟）` : `入场费 ${fee} 🪙`;
-    return `
-    <button class="wh-card ${poor ? 'poor' : ''}" data-wh="${i}">
-      <span class="wh-name">${w.name}</span><span class="wh-tag">${w.tag}</span>
-      <span class="wh-fee">${feeTxt}${poor ? ' · 仓币不足' : ''}</span>
-      <div class="wh-meta">警戒 <b>+${w.alertMin}~${w.alertMax}</b>/格 · 高品质倍率 <b>×${w.weightMult}</b><br>${w.hint}</div>
-    </button>`;
-  }).join('');
+    const btn = mk('button', `wh-card${poor ? ' poor' : ''}`);
+    btn.dataset.wh = i;
+    btn.append(mk('span', 'wh-name', w.name), mk('span', 'wh-tag', w.tag),
+      mk('span', 'wh-fee', `${feeTxt}${poor ? ' · 仓币不足' : ''}`));
+    const meta = mk('div', 'wh-meta');
+    meta.append(document.createTextNode('警戒 '), mk('b', null, `+${w.alertMin}~${w.alertMax}`),
+      document.createTextNode('/格 · 高品质倍率 '), mk('b', null, `×${w.weightMult}`),
+      document.createElement('br'), document.createTextNode(w.hint));
+    btn.append(meta);
+    whList.append(btn);
+  });
   document.querySelectorAll('.wh-card').forEach(c =>
     c.addEventListener('click', () => openShop(WAREHOUSES[Number(c.dataset.wh)])));
 }
@@ -1487,17 +1501,37 @@ function renderShop() {
   const { warehouse } = shopCtx;
   const fm = shopFeeMethod(warehouse);
   const boostOn = boostActiveHere();
-  const boostRow = boostOn
-    ? `<div class="shop-row sel boost"><span><span class="sr-name">📺 爽局生效中</span><span class="sr-desc">本趟出击出货率已升级（出红概率翻倍），连锁不断就一直有效</span></span><b>✓</b></div>`
-    : `<button class="shop-row boost" data-boost="1"><span><span class="sr-name">📺 看广告 · 本趟升级爽局</span><span class="sr-desc">出货率大涨（出红概率 1.5%→3%），连锁整趟有效；最佳纪录不认爽局</span></span><b>免费</b></button>`;
   $('shop-title').textContent = `${warehouse.name} · 出发前准备`;
-  const rows = Object.entries(ECONOMY.shop).map(([key, it]) => {
-    const sel = shopCtx.items.has(key);
-    return `<button class="shop-row ${sel ? 'sel' : ''}" data-item="${key}"><span><span class="sr-name">${sel ? '☑' : '☐'} ${it.name}</span><span class="sr-desc">${it.desc}</span></span><b>${it.price} 🪙</b></button>`;
-  }).join('');
   const feeTxt = fm.method === 'free' ? '入场免费' : fm.method === 'voucher' ? `入场费 ${fm.fee} 🪙 · 体验券抵扣 🎟` : `入场费 ${fm.fee} 🪙`;
-  const legTxt = chainNextLeg > 1 ? `<div class="shop-fee">🔗 连锁第 ${chainNextLeg} 仓：仓币倍率 ×${chainMultAt(chainNextLeg)} · 每格警戒 +${chainNextLeg - 1}</div>` : '';
-  $('shop-body').innerHTML = `<div class="shop-fee">${feeTxt} · 余额 ${save.coins} 🪙</div>${legTxt}${boostRow}${rows}<div class="shop-total">合计 ${shopSelectedCost() + fm.cost} 🪙</div>`;
+  const shopBody = $('shop-body');
+  shopBody.replaceChildren();
+  shopBody.append(mk('div', 'shop-fee', `${feeTxt} · 余额 ${save.coins} 🪙`));
+  if (chainNextLeg > 1) shopBody.append(mk('div', 'shop-fee', `🔗 连锁第 ${chainNextLeg} 仓：仓币倍率 ×${chainMultAt(chainNextLeg)} · 每格警戒 +${chainNextLeg - 1}`));
+  {
+    const wrap = mk('span');
+    if (boostOn) {
+      wrap.append(mk('span', 'sr-name', '📺 爽局生效中'), mk('span', 'sr-desc', '本趟出击出货率已升级（出红概率翻倍），连锁不断就一直有效'));
+      const d = mk('div', 'shop-row sel boost');
+      d.append(wrap, mk('b', null, '✓'));
+      shopBody.append(d);
+    } else {
+      wrap.append(mk('span', 'sr-name', '📺 看广告 · 本趟升级爽局'), mk('span', 'sr-desc', '出货率大涨（出红概率 1.5%→3%），连锁整趟有效；最佳纪录不认爽局'));
+      const b = mk('button', 'shop-row boost');
+      b.dataset.boost = '1';
+      b.append(wrap, mk('b', null, '免费'));
+      shopBody.append(b);
+    }
+  }
+  for (const [key, it] of Object.entries(ECONOMY.shop)) {
+    const sel = shopCtx.items.has(key);
+    const wrap = mk('span');
+    wrap.append(mk('span', 'sr-name', `${sel ? '☑' : '☐'} ${it.name}`), mk('span', 'sr-desc', it.desc));
+    const b = mk('button', `shop-row${sel ? ' sel' : ''}`);
+    b.dataset.item = key;
+    b.append(wrap, mk('b', null, `${it.price} 🪙`));
+    shopBody.append(b);
+  }
+  shopBody.append(mk('div', 'shop-total', `合计 ${shopSelectedCost() + fm.cost} 🪙`));
   const boostBtn = document.querySelector('[data-boost]');
   if (boostBtn) boostBtn.addEventListener('click', async () => {
     boostBtn.disabled = true;
@@ -1566,8 +1600,16 @@ function setupRunScreen(warehouse) {
   $('run-seed').textContent = run.seed;
   $('run-meta').textContent = `${warehouse.name} · ${run.boosted ? '📺 爽局（出货率↑）' : 'B 稀有'}${run.chainLeg > 1 ? ` · 🔗 连锁第 ${run.chainLeg} 仓` : ''}`;
   $('bag-title').textContent = run.bagCapacity > 20 ? '背包（5×4 + 扩容2）' : '背包（5×4）';
-  $('cells').innerHTML = Array.from({ length: SHARED.cellsPerWarehouse }, (_, i) =>
-    `<button class="cell unopened" data-cell="${i}">📦<small>${i + 1} 号格</small></button>`).join('');
+  {
+    const cellsEl = $('cells');
+    cellsEl.replaceChildren();
+    for (let i = 0; i < SHARED.cellsPerWarehouse; i++) {
+      const b = mk('button', 'cell unopened', '📦');
+      b.dataset.cell = i;
+      b.append(mk('small', null, `${i + 1} 号格`));
+      cellsEl.append(b);
+    }
+  }
   document.querySelectorAll('.cell').forEach(c => c.addEventListener('click', () => onCell(Number(c.dataset.cell))));
   for (let i = 0; i < SHARED.cellsPerWarehouse; i++) { // 恢复时重绘已开格（新局无已开格，天然跳过）
     if (run.cellsOpened[i] && run.cellItems[i]) renderCellOpened(i, run.cellItems[i]);
@@ -1641,7 +1683,8 @@ function renderRun(prevValue) {
     d.style.top = `${Math.min(...ys) / run.bagRows * 100}%`;
     d.style.width = `${(Math.max(...xs) - Math.min(...xs) + 1) / 5 * 100}%`;
     d.style.height = `${(Math.max(...ys) - Math.min(...ys) + 1) / run.bagRows * 100}%`;
-    d.innerHTML = `${it.icon}${run.insuredUids.includes(it.uid) ? '<span class="lock">🔒</span>' : ''}`;
+    d.textContent = it.icon;
+    if (run.insuredUids.includes(it.uid)) d.append(mk('span', 'lock', '🔒'));
     d.title = `${it.name} · ${fmtWan(it.value)} 万`;
     bag.appendChild(d);
   }
@@ -1658,7 +1701,8 @@ function renderCellOpened(idx, item) {
   const c = document.querySelector(`.cell[data-cell="${idx}"]`);
   if (!c) return;
   c.className = `cell opened revealing t${item.tier}`;
-  c.innerHTML = `${item.icon}<span class="cv">${fmtWan(item.value)} 万</span>`;
+  c.textContent = item.icon;
+  c.append(mk('span', 'cv', `${fmtWan(item.value)} 万`));
 }
 
 async function onCell(idx) {
@@ -1669,7 +1713,7 @@ async function onCell(idx) {
   const prevValue = run.bagValue();
   const ev = run.openCell(idx);
   if (ev.type === 'caught') {
-    if (cellEl) { cellEl.classList.add('searching'); cellEl.innerHTML = '🔍<small>翻找中</small>'; }
+    if (cellEl) { cellEl.classList.add('searching'); cellEl.textContent = '🔍'; cellEl.append(mk('small', null, '翻找中')); }
     Sfx.searching();
     await delay(600);
     document.body.classList.add('police');
@@ -1685,7 +1729,7 @@ async function onCell(idx) {
     return finishToResult(ev.result);
   }
   if (ev.type === 'item' || ev.type === 'full') {
-    if (cellEl) { cellEl.classList.add('searching'); cellEl.innerHTML = '🔍<small>翻找中</small>'; }
+    if (cellEl) { cellEl.classList.add('searching'); cellEl.textContent = '🔍'; cellEl.append(mk('small', null, '翻找中')); }
     Sfx.searching();
     await delay(REVEAL_MS[ev.item.tier]);
     if (cellEl) cellEl.classList.remove('searching');
@@ -1715,7 +1759,9 @@ function showLootPop(item) {
   if (FAST) return;
   const pop = $('loot-pop'), inner = $('loot-pop-inner');
   pop.className = `t${item.tier}`;
-  inner.innerHTML = `<span class="lp-icon">${item.icon}</span><div class="lp-name">${item.name}</div><div class="lp-tier" style="color:${TIER_COLORS[item.tier]}">${item.tier === 5 ? '★ 大 金 ★' : TIER_NAMES[item.tier]}</div><div class="lp-value">${fmtWan(item.value)} 万</div>`;
+  const lpTier = mk('div', 'lp-tier', item.tier === 5 ? '★ 大 金 ★' : TIER_NAMES[item.tier]);
+  lpTier.style.color = TIER_COLORS[item.tier];
+  inner.replaceChildren(mk('span', 'lp-icon', item.icon), mk('div', 'lp-name', item.name), lpTier, mk('div', 'lp-value', `${fmtWan(item.value)} 万`));
   pop.classList.remove('hidden');
   clearTimeout(lootTimer);
   lootTimer = setTimeout(() => pop.classList.add('hidden'), item.tier === 5 ? 2100 : 1300);
@@ -1739,7 +1785,8 @@ function openPending() {
   const p = run.pending;
   const el = $('pending-item');
   el.style.borderColor = TIER_COLORS[p.tier];
-  el.innerHTML = `${p.icon} ${p.name}（${TIER_NAMES[p.tier]}）· ${fmtWan(p.value)} 万 · 占 ${p.size} 格<small>${p.desc}</small>`;
+  el.textContent = `${p.icon} ${p.name}（${TIER_NAMES[p.tier]}）· ${fmtWan(p.value)} 万 · 占 ${p.size} 格`;
+  el.append(mk('small', null, p.desc));
   $('pending-note').textContent = '这件放不下。丢几件腾位（每件 +5 警戒），放弃这件，还是见好就收？';
   $('discard-panel').classList.add('hidden');
   $('pending-btns').classList.remove('hidden');
@@ -1756,8 +1803,16 @@ $('btn-discard-cancel').addEventListener('click', () => {
   $('pending-btns').classList.remove('hidden');
 });
 function renderDiscard() {
-  $('discard-list').innerHTML = run.bag.map(i =>
-    `<button class="discard-chip ${discardSel.has(i.uid) ? 'sel' : ''}" data-uid="${i.uid}">${i.icon} ${i.name} · ${fmtWan(i.value)}万 · ${i.size}格${run.insuredUids.includes(i.uid) ? ' 🔒' : ''}</button>`).join('');
+  {
+    const dl = $('discard-list');
+    dl.replaceChildren();
+    for (const i of run.bag) {
+      const ch = mk('button', `discard-chip${discardSel.has(i.uid) ? ' sel' : ''}`,
+        `${i.icon} ${i.name} · ${fmtWan(i.value)}万 · ${i.size}格${run.insuredUids.includes(i.uid) ? ' 🔒' : ''}`);
+      ch.dataset.uid = i.uid;
+      dl.append(ch);
+    }
+  }
   document.querySelectorAll('.discard-chip').forEach(ch => ch.addEventListener('click', () => {
     const uid = Number(ch.dataset.uid);
     discardSel.has(uid) ? discardSel.delete(uid) : discardSel.add(uid);
@@ -1816,36 +1871,46 @@ function finishToResult(result) {
     newSeen = [...new Set((result.reveals ?? []).map(r => r.itemId))].filter(id => !before.has(id));
   }
   const body = $('result-body');
+  body.replaceChildren();
+  const headEl = (cls, txt) => { const hd = mk('div', `result-head ${cls}`); hd.append(mk('div', 'big', txt)); return hd; };
+  const ledgerEl = rows => { const card = mk('div', 'card ledger'); rows.forEach(r => card.append(r)); return card; };
   if (result.outcome === 'caught') {
-    const ins = result.insuredItem;
-    body.innerHTML = `
-      <div class="result-head lose"><div class="big">被 抓 了</div></div>
-      <p class="result-sub">${result.warehouse.name} · ${result.boosted ? '📺广告爽局' : result.config.label} · 开了 ${result.opens} 格，终局警戒 ${result.alert}</p>
-      <div class="card ledger">
-        <div class="row"><span>搜获总值</span><b>${fmtWan(result.G)} 万</b></div>
-        <div class="row"><span>被没收</span><b>-${fmtWan(result.G - result.I)} 万</b></div>
-        <div class="row total"><span>保险格保留</span><b>${fmtWan(result.I)} 万</b></div>
-        <div class="row coin-row"><span>仓币</span><b>+0（被抓不发币）</b></div>
-        ${lastCoins.bonus > 0 ? `<div class="row coin-row"><span>成就 / 套装奖励</span><b>+${lastCoins.bonus} 🪙</b></div>` : ''}
-      </div>
-      <p class="top-item">${(result.insuredItems ?? []).length ? `🔒 保险保住了：${result.insuredItems.map(i => `${i.icon} ${i.name} ${fmtWan(i.value)} 万`).join('、')}` : '背包是空的，什么都没保住。'}</p>`;
+    body.append(headEl('lose', '被 抓 了'));
+    body.append(mk('p', 'result-sub', `${result.warehouse.name} · ${result.boosted ? '📺广告爽局' : result.config.label} · 开了 ${result.opens} 格，终局警戒 ${result.alert}`));
+    const rows = [
+      ledgerRow('搜获总值', `${fmtWan(result.G)} 万`),
+      ledgerRow('被没收', `-${fmtWan(result.G - result.I)} 万`),
+      ledgerRow('保险格保留', `${fmtWan(result.I)} 万`, 'row total'),
+      ledgerRow('仓币', '+0（被抓不发币）', 'row coin-row'),
+    ];
+    if (lastCoins.bonus > 0) rows.push(ledgerRow('成就 / 套装奖励', `+${lastCoins.bonus} 🪙`, 'row coin-row'));
+    body.append(ledgerEl(rows));
+    body.append(mk('p', 'top-item', (result.insuredItems ?? []).length
+      ? `🔒 保险保住了：${result.insuredItems.map(i => `${i.icon} ${i.name} ${fmtWan(i.value)} 万`).join('、')}`
+      : '背包是空的，什么都没保住。'));
   } else {
-    body.innerHTML = `
-      <div class="result-head win"><div class="big">${result.outcome === 'cleared' ? '整仓搬空' : '撤离成功'}</div></div>
-      <p class="result-sub">${result.warehouse.name} · ${result.boosted ? '📺广告爽局' : result.config.label} · 开了 ${result.opens} 格 · 警戒 ${result.alert}</p>
-      <div style="text-align:center"><span class="stamp">${result.rating}</span></div>
-      <div class="card ledger">
-        <div class="row"><span>搜获总值 G</span><b>${fmtWan(result.G)} 万</b></div>
-        <div class="row"><span>成功带出 C</span><b>${fmtWan(result.C)} 万</b></div>
-        ${result.bonus > 0 ? `<div class="row"><span>早撤加成（警戒<40，+5%）</span><b>+${fmtWan(result.bonus)} 万</b></div>` : ''}
-        <div class="row total"><span>最终到手</span><b>${fmtWan(result.final)} 万</b></div>
-        <div class="row coin-row"><span>仓币折算（风险 R ${result.riskR.toFixed(2)} · ×${result.coinRate}${result.chainMult > 1 ? ` · 连锁 ×${result.chainMult}` : ''}）</span><b>+${lastCoins.run} 🪙</b></div>
-        ${lastCoins.bonus > 0 ? `<div class="row coin-row"><span>成就 / 套装奖励</span><b>+${lastCoins.bonus} 🪙</b></div>` : ''}
-      </div>
-      <p class="top-item">${result.topItem ? `最贵单品：${result.topItem.icon} ${result.topItem.name}（${TIER_NAMES[result.topItem.tier]}）${fmtWan(result.topItem.value)} 万` : ''}${result.hasRed ? ' · 本局出过大金！' : ''}</p>`;
+    body.append(headEl('win', result.outcome === 'cleared' ? '整仓搬空' : '撤离成功'));
+    body.append(mk('p', 'result-sub', `${result.warehouse.name} · ${result.boosted ? '📺广告爽局' : result.config.label} · 开了 ${result.opens} 格 · 警戒 ${result.alert}`));
+    const stampWrap = mk('div');
+    stampWrap.style.textAlign = 'center';
+    stampWrap.append(mk('span', 'stamp', result.rating));
+    body.append(stampWrap);
+    const rows = [
+      ledgerRow('搜获总值 G', `${fmtWan(result.G)} 万`),
+      ledgerRow('成功带出 C', `${fmtWan(result.C)} 万`),
+    ];
+    if (result.bonus > 0) rows.push(ledgerRow('早撤加成（警戒<40，+5%）', `+${fmtWan(result.bonus)} 万`));
+    rows.push(ledgerRow('最终到手', `${fmtWan(result.final)} 万`, 'row total'));
+    rows.push(ledgerRow(`仓币折算（风险 R ${result.riskR.toFixed(2)} · ×${result.coinRate}${result.chainMult > 1 ? ` · 连锁 ×${result.chainMult}` : ''}）`, `+${lastCoins.run} 🪙`, 'row coin-row'));
+    if (lastCoins.bonus > 0) rows.push(ledgerRow('成就 / 套装奖励', `+${lastCoins.bonus} 🪙`, 'row coin-row'));
+    body.append(ledgerEl(rows));
+    body.append(mk('p', 'top-item', `${result.topItem ? `最贵单品：${result.topItem.icon} ${result.topItem.name}（${TIER_NAMES[result.topItem.tier]}）${fmtWan(result.topItem.value)} 万` : ''}${result.hasRed ? ' · 本局出过大金！' : ''}`));
   }
   if (unlocked.length || newSeen.length) {
-    body.innerHTML += `<div class="unlock-note">${newSeen.length ? `📖 新点亮图鉴 ${newSeen.length} 件` : ''}${unlocked.map(a => `<div>🏆 成就解锁：${a.name}——${a.desc}</div>`).join('')}</div>`;
+    const un = mk('div', 'unlock-note');
+    if (newSeen.length) un.append(document.createTextNode(`📖 新点亮图鉴 ${newSeen.length} 件`));
+    for (const a of unlocked) un.append(mk('div', null, `🏆 成就解锁：${a.name}——${a.desc}`));
+    body.append(un);
   }
   // M3 连锁：撤离可继续下一仓（倍率递增封顶、每仓照付门票）；被抓断链，已落袋不受影响
   const chainBtn = $('btn-chain');
@@ -1856,12 +1921,12 @@ function finishToResult(result) {
   } else {
     chainBtn.classList.add('hidden');
     boostChain = false; // 被抓即出击结束，爽局激活随之清零
-    if (result.chainLeg >= 2) body.innerHTML += `<p class="top-item">🔗 连锁在第 ${result.chainLeg} 仓中断——已落袋的仓币和战绩都还在。</p>`;
+    if (result.chainLeg >= 2) body.append(mk('p', 'top-item', `🔗 连锁在第 ${result.chainLeg} 仓中断——已落袋的仓币和战绩都还在。`));
   }
   clearRunCheckpoint();
   renderHome();
   $('btn-post').classList.toggle('hidden', !inContainer()); // 发帖晒战绩仅虎扑容器内可用
-  $('btn-share').classList.toggle('hidden', inContainer()); // 容器内以发帖代替图片下载（平台规范路径）
+  $('btn-share').classList.toggle('hidden', inContainer()); // 容器内以发帖分享（平台规范路径）
   $('post-note').textContent = '';
   const manifest = drawShareCard($('share-canvas'), result, { nickname: playerNick });
   window.__DAJIN_LAST_CARD__ = manifest;
@@ -1897,13 +1962,11 @@ $('btn-post').addEventListener('click', async () => {
   btn.disabled = false;
 });
 $('btn-share').addEventListener('click', () => {
-  $('share-canvas').toBlob(blob => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `dajin-${run.outcome}-${run.seed}.png`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-  });
+  // 页面内展示战绩图（长按/右键保存）——平台规范：不做程序化保存链路
+  const img = $('share-preview');
+  img.src = $('share-canvas').toDataURL('image/png');
+  img.classList.remove('hidden');
+  $('share-hint').classList.remove('hidden');
 });
 $('btn-again').addEventListener('click', () => { renderWarehouses(); show('screen-warehouse'); openShop(run.warehouse); }); // 再来一局同样走局前商店（门票/道具口径一致）
 $('btn-result-warehouse').addEventListener('click', () => { renderWarehouses(); show('screen-warehouse'); });
@@ -1939,42 +2002,71 @@ if (desktopAvailable()) {
 } show('screen-home'); });
 
 // ---------- M2：图鉴 / 成就 / 战绩 ----------
-function collCell(item) {
+function collCellEl(item) {
   const n = save.collection[item.id] ?? 0;
   const lit = n > 0;
-  return `<div class="coll-cell ${lit ? 'lit' : 'unlit'}" style="border-color:${TIER_COLORS[item.tier]}"><span class="cc-icon">${lit ? item.icon : '❔'}</span><span class="cc-name">${lit ? item.name : '？？？'}</span>${n > 1 ? `<span class="cc-count">×${n}</span>` : ''}</div>`;
+  const d = mk('div', `coll-cell ${lit ? 'lit' : 'unlit'}`);
+  d.style.borderColor = TIER_COLORS[item.tier];
+  d.append(mk('span', 'cc-icon', lit ? item.icon : '❔'), mk('span', 'cc-name', lit ? item.name : '？？？'));
+  if (n > 1) d.append(mk('span', 'cc-count', `×${n}`));
+  return d;
 }
 function renderCollection() {
   const lit = Object.keys(save.collection).length;
   $('coll-summary').textContent = `已点亮 ${lit} / ${ITEMS.length} 件 · 摸到过即点亮（含被抓、丢弃的），重复摸到累计次数`;
-  let html = '';
+  const body = $('coll-body');
+  body.replaceChildren();
   for (const st of SETS) {
     const pr = setProgress(st.id, save.collection);
     const members = ITEMS.filter(i => i.setId === st.id);
-    html += `<div class="coll-set ${pr.done ? 'done' : ''}"><div class="coll-set-head"><b>${st.name}${pr.done ? ' ✔ 已集齐' : ''}</b><span>${st.desc} · ${pr.lit}/${pr.total}</span></div><div class="coll-grid">${members.map(collCell).join('')}</div></div>`;
+    const setDiv = mk('div', `coll-set${pr.done ? ' done' : ''}`);
+    const hd = mk('div', 'coll-set-head');
+    hd.append(mk('b', null, `${st.name}${pr.done ? ' ✔ 已集齐' : ''}`), mk('span', null, `${st.desc} · ${pr.lit}/${pr.total}`));
+    const grid = mk('div', 'coll-grid');
+    members.forEach(m => grid.append(collCellEl(m)));
+    setDiv.append(hd, grid);
+    body.append(setDiv);
   }
   for (let t = 5; t >= 0; t--) {
     const items = ITEMS.filter(i => i.tier === t);
-    html += `<div class="coll-tier-title" style="color:${TIER_COLORS[t]}">${TIER_NAMES[t]} · ${items.filter(i => (save.collection[i.id] ?? 0) > 0).length}/${items.length}</div><div class="coll-grid">${items.map(collCell).join('')}</div>`;
+    const title = mk('div', 'coll-tier-title', `${TIER_NAMES[t]} · ${items.filter(i => (save.collection[i.id] ?? 0) > 0).length}/${items.length}`);
+    title.style.color = TIER_COLORS[t];
+    const grid = mk('div', 'coll-grid');
+    items.forEach(m => grid.append(collCellEl(m)));
+    body.append(title, grid);
   }
-  $('coll-body').innerHTML = html;
 }
 function renderAchievements() {
   $('ach-summary').textContent = `已解锁 ${save.achievements.length} / ${ACHIEVEMENTS.length}`;
-  $('ach-body').innerHTML = ACHIEVEMENTS.map(a => {
-    const has = save.achievements.includes(a.id);
-    return `<div class="ach-row ${has ? '' : 'locked'}"><span class="ach-icon">${has ? '🏆' : '🔒'}</span><span><div class="ach-name">${a.name}</div><div class="ach-desc">${a.desc}</div></span></div>`;
-  }).join('');
+  {
+    const ab = $('ach-body');
+    ab.replaceChildren();
+    for (const a of ACHIEVEMENTS) {
+      const has = save.achievements.includes(a.id);
+      const row = mk('div', `ach-row${has ? '' : ' locked'}`);
+      const txt = mk('span');
+      txt.append(mk('div', 'ach-name', a.name), mk('div', 'ach-desc', a.desc));
+      row.append(mk('span', 'ach-icon', has ? '🏆' : '🔒'), txt);
+      ab.append(row);
+    }
+  }
 }
 function renderHistory() {
-  if (!save.history.length) { $('hist-body').innerHTML = '<p class="screen-sub">还没有战绩，去开第一局。</p>'; return; }
+  const hb = $('hist-body');
+  if (!save.history.length) { hb.replaceChildren(mk('p', 'screen-sub', '还没有战绩，去开第一局。')); return; }
   const whName = id => (WAREHOUSES.find(w => w.id === id) ?? {}).name ?? id;
-  $('hist-body').innerHTML = save.history.map(h => {
-    const d = new Date(h.t);
+  hb.replaceChildren();
+  for (const hst of save.history) {
+    const d = new Date(hst.t);
     const when = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    const label = h.outcome === 'caught' ? '被抓' : h.outcome === 'cleared' ? '搬空' : '撤离';
-    return `<div class="hist-row ${h.outcome === 'caught' ? 'caught' : ''}"><span>${label} · ${whName(h.warehouse)} <span class="h-meta">${when} · 开 ${h.opens} 格${h.hasRed ? ' · 出大金' : ''}${h.rating ? ` · ${h.rating} 级` : ''}${h.boosted ? ' · 📺爽局' : ''}</span></span><span class="h-val">${fmtWan(h.value)} 万</span></div>`;
-  }).join('');
+    const label = hst.outcome === 'caught' ? '被抓' : hst.outcome === 'cleared' ? '搬空' : '撤离';
+    const row = mk('div', `hist-row${hst.outcome === 'caught' ? ' caught' : ''}`);
+    const left = mk('span');
+    left.append(document.createTextNode(`${label} · ${whName(hst.warehouse)} `),
+      mk('span', 'h-meta', `${when} · 开 ${hst.opens} 格${hst.hasRed ? ' · 出大金' : ''}${hst.rating ? ` · ${hst.rating} 级` : ''}${hst.boosted ? ' · 📺爽局' : ''}`));
+    row.append(left, mk('span', 'h-val', `${fmtWan(hst.value)} 万`));
+    hb.append(row);
+  }
 }
 $('btn-nav-collection').addEventListener('click', () => { renderCollection(); show('screen-collection'); });
 $('btn-nav-ach').addEventListener('click', () => { renderAchievements(); show('screen-achievements'); });
