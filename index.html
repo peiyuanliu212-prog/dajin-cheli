@@ -421,7 +421,7 @@ const DEFAULT_CONFIG = 'B';
 const WAREHOUSES = [
   { id: 'normal', name: '普通仓', tag: '社区旧仓 · 堆得还算稳', weightMult: 1, alertMin: 5, alertMax: 8, hint: '堆得不算高，货色一般' },
   { id: 'secret', name: '精品仓', tag: '精品库房 · 堆得更高', weightMult: 1.6, alertMin: 6, alertMax: 9, hint: '好货明显变多，震动也涨得快' },
-  { id: 'topsecret', name: '珍品仓', tag: '珍品库房 · 堆到了天花板', weightMult: 2.4, alertMin: 8, alertMax: 10, hint: '大金温床，震动蹿得最快' },
+  { id: 'topsecret', name: '珍品仓', tag: '珍品库房 · 堆到了天花板', weightMult: 2.4, alertMin: 8, alertMax: 10, hint: '大金扎堆，震动蹿得最快' },
 ];
 
 // 把紫/金/红权重乘以 mult，增加量从白/绿按原比例扣除，蓝不变，结果归一
@@ -544,7 +544,7 @@ const ITEMS = [
   { id: 'itm_024', name: '游戏卡带盒', desc: '整盒正版卡带', tier: 2, icon: '🎮', weight: 1 },
   { id: 'itm_025', name: '整本邮票册', desc: '八十年代的整版票', tier: 2, icon: '📮', weight: 1, setId: 'set_paper' },
   { id: 'itm_026', name: '紫砂茶具', desc: '一壶四杯，包浆温润', tier: 2, icon: '🍵', weight: 1, setId: 'set_tea' },
-  { id: 'itm_027', name: '军用望远镜', desc: '镜片镀膜完好', tier: 2, icon: '🔭', weight: 1, setId: 'set_optic' },
+  { id: 'itm_027', name: '高倍望远镜', desc: '镜片镀膜完好', tier: 2, icon: '🔭', weight: 1, setId: 'set_optic' },
   { id: 'itm_028', name: '黑胶唱片机', desc: '唱针落下，时光倒流', tier: 2, icon: '💿', weight: 1 },
   // 紫 · 史诗 ×6
   { id: 'itm_029', name: '绝版联名球鞋', desc: '鞋盒都在，尺码黄金', tier: 3, icon: '👟', weight: 1, sizeDist: { 2: 1 } },
@@ -659,7 +659,7 @@ function genItem(streams, config, warehouse, opens) {
 
 /* ===== src/sim/state.js ===== */
 // 局状态机（纯逻辑、无 DOM）：选仓后创建，phase: playing -> pending(满仓待处置) -> over
-// 规则口径：GAME_RULES（R1 时序、R2 保险标记、R3 摆放/重排、丢弃 +5/件；塌架判定为概率坡道，ADR-021）
+// 规则口径：GAME_RULES（R1 时序、R2 防震标记、R3 摆放/重排、丢弃 +5/件；塌架判定为概率坡道，ADR-021）
 
 class Run {
   constructor({ config, warehouse, seed, extraCells = 0, dualInsurance = false, smokeBombs = 0, chainLeg = 1, runId = null, boosted = false }) {
@@ -1231,7 +1231,7 @@ function drawShareCard(canvas, result, opts = {}) {
   const mainValue = caught ? result.I : result.C;
   const texts = [];
 
-  // 底：军绿金属 + 斜纹边框
+  // 底：墨绿金属 + 斜纹边框
   ctx.fillStyle = '#10130e'; ctx.fillRect(0, 0, 720, 960);
   ctx.fillStyle = '#1b2016'; ctx.fillRect(24, 24, 672, 912);
   ctx.save();
@@ -1256,7 +1256,7 @@ function drawShareCard(canvas, result, opts = {}) {
   if (opts.nickname) put(`@${opts.nickname}`, 360, 234, '22px sans-serif', '#9aa48c', 'center');
 
   if (caught) {
-    put('被 抓 了', 360, 300, 'bold 64px sans-serif', '#e5484d', 'center');
+    put('货 架 塌 了', 360, 300, 'bold 64px sans-serif', '#e5484d', 'center');
     put('贪到最后，只保住防震箱里这一件', 360, 348, '26px sans-serif', '#9aa48c', 'center');
     put('防震保留', 360, 440, '28px sans-serif', '#9aa48c', 'center');
   } else {
@@ -1298,7 +1298,7 @@ function drawShareCard(canvas, result, opts = {}) {
 }
 
 /* ===== src/ui/sound.js ===== */
-// 合成音效（WebAudio，零音频资源）：开格/出货/警告音/塌架/带出
+// 合成音效（WebAudio，零音频资源）：开格/出货/提示音/塌架/带出
 // 所有声音都由用户点击触发调用，符合浏览器自动播放策略；soundOn 存档控制
 let ctx = null;
 let enabled = true;
@@ -1407,7 +1407,7 @@ function renderHome() {
   $('rec-best').textContent = `${fmtWan(save.bestCarried)} 万`;
   $('rec-total').textContent = `${fmtWan(save.totalCarried)} 万`;
   $('rec-ins').textContent = `${fmtWan(save.totalInsurance)} 万`;
-  $('rec-runs').textContent = `${save.evacs} 撤 / ${save.caughts} 抓 · 共 ${save.runs} 局`;
+  $('rec-runs').textContent = `带出 ${save.evacs} · 塌架 ${save.caughts} · 共 ${save.runs} 局`;
   $('nav-coll-count').textContent = `(${Object.keys(save.collection).length}/${ITEMS.length})`;
   $('nav-ach-count').textContent = `(${save.achievements.length}/${ACHIEVEMENTS.length})`;
   const v = save.vouchers ?? {};
@@ -1736,8 +1736,8 @@ function renderRun(prevValue) {
   const prob01 = run.nextCaughtProb();
   const band = riskBand(prob01);
   $('alert-next').textContent = `下一格风险：${band}`;
-  // 阶段按本仓真实概率分档（ADR-020 改风险档显示：不给精确百分比，留不确定性才有偷感）
-  const stage = prob01 >= 1 ? '必塌区' : prob01 > 0 ? `${band}区` : a >= 70 ? '警觉' : a >= 40 ? '察觉' : '平稳';
+  // 阶段按本仓真实概率分档（ADR-020 改风险档显示：不给精确百分比，留不确定性才有悬念感）
+  const stage = prob01 >= 1 ? '必塌区' : prob01 > 0 ? `${band}区` : a >= 70 ? '剧晃' : a >= 40 ? '晃动' : '平稳';
   $('alert-stage').textContent = stage;
   const fill = $('alert-fill');
   fill.style.width = `${Math.min(100, a)}%`;
