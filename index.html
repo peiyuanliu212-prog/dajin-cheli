@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>大金撤离 · 仓库寻宝王</title>
+<title>大金撤离：再贪一格</title>
 <style>
 :root {
   --bg: #10130e;
@@ -204,7 +204,7 @@ body.police { animation: police .16s steps(1) 6; }
   <section id="screen-home" class="screen active">
     <div class="hazard"></div>
     <h1 class="logo">大金撤离</h1>
-    <p class="subtitle">仓 库 寻 宝 王</p>
+    <p class="subtitle">再 贪 一 格</p>
     <p class="tagline">逐格开箱，见好就收，还是再贪一格？<br>警戒爆表被抓，只剩保险格一件。</p>
     <div class="records card">
       <div class="rec"><span>历史最高带出</span><b id="rec-best">0 万</b></div>
@@ -1211,7 +1211,7 @@ function drawShareCard(canvas, result, opts = {}) {
   };
 
   put('大 金 撤 离', 360, 108, 'bold 54px sans-serif', '#e8e6da', 'center');
-  put('仓库寻宝王 · 战绩单', 360, 152, '24px sans-serif', '#9aa48c', 'center');
+  put('再贪一格 · 战绩单', 360, 152, '24px sans-serif', '#9aa48c', 'center');
   put(`${result.warehouse.name} · ${result.config.label}`, 360, 196, '26px sans-serif', '#e8e6da', 'center');
   if (opts.nickname) put(`@${opts.nickname}`, 360, 234, '22px sans-serif', '#9aa48c', 'center');
 
@@ -1886,7 +1886,7 @@ $('btn-post').addEventListener('click', async () => {
       caught ? `结果：被巡逻抓住，保险保留 ${fmtWan(result.I)} 万${result.topItem ? `（${result.topItem.name}）` : ''}，仓币 +0` : `结果：成功撤离，带出 ${fmtWan(result.C)} 万，评级 ${result.rating}${result.topItem ? `，最贵 ${result.topItem.name}` : ''}，仓币 +${result.coinsGained}`,
       result.boosted ? '本局是广告爽局（出货率拉满）' : '纯 B 正赛局',
       result.chainLeg > 1 ? `连锁第 ${result.chainLeg} 仓` : '',
-      '逐格开箱，见好就收还是再贪一格？来《大金撤离：仓库寻宝王》试试手气。',
+      '逐格开箱，见好就收还是再贪一格？来《大金撤离：再贪一格》试试手气。',
     ].filter(Boolean);
     const r = await postResultPoster({ blob, title, content: lines.join('\n') });
     $('post-note').textContent = r.ok ? '发帖编辑器已打开，改两句就能发啦' : r.message;
