@@ -215,6 +215,8 @@ body.police { animation: police .16s steps(1) 6; }
       <div class="rec"><span>战绩</span><b id="rec-runs">0 局</b></div>
     </div>
     <div class="econ-line card" id="econ-line"></div>
+    <button id="btn-supply" class="btn-ghost">📺 每日补给 · 看广告 +40 🪙</button>
+    <p id="supply-note" class="fineprint"></p>
     <div class="config-switch">
       <span class="cs-label">模式</span>
       <p class="mode-line">B 稀有 · 正赛<small>开局前看广告，可把本趟出击升级「爽局」（出货率大涨）；最佳纪录只认纯 B 局</small></p>
@@ -296,6 +298,7 @@ body.police { animation: police .16s steps(1) 6; }
           </div>
         </div>
         <div id="pending-btns" class="modal-btns col">
+          <button id="btn-pend-expand" class="btn-ghost">📺 看广告 · 临时扩容 +4 格</button>
           <button id="btn-pend-discard" class="btn-primary">丢弃腾位</button>
           <button id="btn-pend-abandon" class="btn-ghost">放弃这件，继续搜</button>
           <button id="btn-pend-evac" class="btn-ghost">直接撤离</button>
@@ -311,6 +314,11 @@ body.police { animation: police .16s steps(1) 6; }
     <canvas id="share-canvas" width="720" height="960"></canvas>
     <img id="share-preview" class="share-preview hidden" alt="战绩图预览">
     <p id="share-hint" class="post-note hidden">长按图片即可保存战绩图</p>
+    <div class="modal-btns">
+      <button id="btn-rescue" class="btn-ghost hidden">📺 看广告 · 多保一件</button>
+      <button id="btn-coinbonus" class="btn-ghost hidden">📺 看广告 · 本局仓币 +50%</button>
+    </div>
+    <p id="ad-note" class="fineprint"></p>
     <div class="modal-btns">
       <button id="btn-share" class="btn-ghost">保存战绩图</button>
       <button id="btn-post" class="btn-ghost hidden">📣 发帖晒战绩</button>
@@ -448,6 +456,7 @@ const ECONOMY = {
   chainMult: [1, 1.15, 1.25, 1.3], // 按连锁仓序（1 起），第 4 仓起封顶
   achievementCoin: 20,
   setCoin: 100,
+  ads: { supplyCoins: 40, coinBonusRate: 0.5, expandCells: 4, recoveryCompCoins: 30 }, // ADR-032 广告位参数
 };
 function coinRateAt(R) {
   for (const [t, r] of ECONOMY.rateBands) if (R < t) return r;
@@ -654,6 +663,8 @@ function genItem(streams, config, warehouse, opens) {
 class Run {
   constructor({ config, warehouse, seed, extraCells = 0, dualInsurance = false, smokeBombs = 0, chainLeg = 1, runId = null, boosted = false }) {
     this.boosted = boosted; // 广告爽局（ADR-026）：config 已是生效概率表（爽局=A），此标记供纪录口径与展示
+    this.baseExtraCells = extraCells; // 开局扩容（检查点口径：局内广告扩容靠动作日志回放，不进构造参数）
+    this.adExpanded = false; // 广告临时扩容（ADR-032）：用过的局打助力标，最佳纪录不认
     this.config = config;
     this.warehouse = warehouse;
     this.seed = seed;
@@ -704,6 +715,25 @@ class Run {
   }
   insuredItems() {
     return this.bag.filter(i => this.insuredUids.includes(i.uid)).sort((a, b) => b.value - a.value);
+  }
+
+  // 广告临时扩容（ADR-032）：满仓待决时 +4 格并重试放下 pending；每局限 1 次，动作入日志可回放
+  expandBagAd() {
+    if (this.phase !== 'pending' || !this.pending || this.adExpanded) return { placed: false };
+    this.actionLog.push(['expand']);
+    this.adExpanded = true;
+    this.bagCapacity += ECONOMY.ads.expandCells;
+    this.bagRows = Math.ceil(this.bagCapacity / SHARED.backpackCols);
+    this.blockedCells = [];
+    const total = this.bagRows * SHARED.backpackCols;
+    for (let k = this.bagCapacity; k < total; k++)
+      this.blockedCells.push([k % SHARED.backpackCols, Math.floor(k / SHARED.backpackCols)]);
+    this.grid = newGrid(this.bagRows);
+    for (const [x, y] of this.blockedCells) this.grid[y][x] = true;
+    for (const it of this.bag) for (const [x, y] of it.cells) this.grid[y][x] = true;
+    const item = this.pending;
+    if (this.place(item)) { this.pending = null; this.phase = 'playing'; return { placed: true }; }
+    return { placed: false };
   }
 
   // M3 烟雾弹：只降当前警戒，surv（已累计风险 R）不回滚
@@ -824,7 +854,7 @@ class Run {
         final: I, rating: null, insuredItem: insItems[0] ?? null, insuredItems: insItems, topItem,
         opens: this.opens, items, hasRed: this.hasRed, seed: this.seed, reveals: this.reveals,
         warehouse: this.warehouse, config: this.config, alert: this.alert,
-        riskR, coinRate, chainMult, coinsGained: 0, chainLeg: this.chainLeg, runId: this.runId, boosted: this.boosted,
+        riskR, coinRate, chainMult, coinsGained: 0, chainLeg: this.chainLeg, runId: this.runId, boosted: this.boosted, adExpanded: this.adExpanded,
       };
     }
     const C = Math.round(this.bagValue() * 10) / 10;
@@ -835,7 +865,7 @@ class Run {
       opens: this.opens, items, hasRed: this.hasRed, seed: this.seed, reveals: this.reveals,
       warehouse: this.warehouse, config: this.config, alert: this.alert,
       // M3 仓币：基数只认原始带出 C（不含早撤加成/广告加成），整仓向下取整一次
-      riskR, coinRate, chainMult, coinsGained: Math.floor(C * coinRate * chainMult), chainLeg: this.chainLeg, runId: this.runId, boosted: this.boosted,
+      riskR, coinRate, chainMult, coinsGained: Math.floor(C * coinRate * chainMult), chainLeg: this.chainLeg, runId: this.runId, boosted: this.boosted, adExpanded: this.adExpanded,
     };
   }
 
@@ -845,7 +875,7 @@ class Run {
       bagValue: this.bagValue(), bagCount: this.bag.length, gross: this.gross,
       pending: this.pending?.name ?? null, seed: this.seed,
       config: this.config.id, warehouse: this.warehouse.id, nextCaughtProb: this.nextCaughtProb(),
-      riskR: 1 - this.surv, smoke: this.smoke, chainLeg: this.chainLeg, bagCapacity: this.bagCapacity, boosted: this.boosted, coinsPreview: this.phase === 'over' ? null : Math.floor(this.bagValue() * coinRateAt(1 - this.surv) * chainMultAt(this.chainLeg)),
+      riskR: 1 - this.surv, smoke: this.smoke, chainLeg: this.chainLeg, bagCapacity: this.bagCapacity, boosted: this.boosted, adExpanded: this.adExpanded, coinsPreview: this.phase === 'over' ? null : Math.floor(this.bagValue() * coinRateAt(1 - this.surv) * chainMultAt(this.chainLeg)),
     };
   }
 }
@@ -866,6 +896,7 @@ function restoreRun(ctorOpts, actions) {
     else if (kind === 'discard') run.discard(arg);
     else if (kind === 'abandon') run.abandonPending();
     else if (kind === 'smoke') run.useSmoke();
+    else if (kind === 'expand') run.expandBagAd();
     else if (kind === 'evac') run.evacuate();
     if (run.phase === 'over') break;
   }
@@ -993,6 +1024,7 @@ const DEFAULTS = {
   collection: {}, achievements: [], history: [],
   coins: 0, vouchers: { secret: 1, topsecret: 1 }, vouchersGranted: true,
   coinsEarned: 0, coinsSpent: 0, setsRewarded: [], lastRunId: null,
+  lastSupplyDay: null, lastAdCoinRunId: null, lastAdClaimTs: null, // ADR-032：每日补给日期 / 结算广告加成与补发幂等
 };
 
 const freshDefaults = () => JSON.parse(JSON.stringify(DEFAULTS)); // 深拷贝：防嵌套对象（vouchers/collection 等）与 DEFAULTS 共享引用被写穿
@@ -1071,8 +1103,8 @@ function recordResult(save, result) {
   } else {
     save.evacs += 1;
     save.totalCarried += result.C;
-    // ADR-026：最佳纪录（荣誉）只认纯 B 局；广告爽局照常计累计/仓币/图鉴，但不上最佳榜
-    if (!result.boosted && result.C > save.bestCarried) save.bestCarried = result.C;
+    // ADR-026/032：最佳纪录（荣誉）只认无广告助力的局；爽局/广告扩容照常计累计/仓币/图鉴，但不上最佳榜
+    if (!result.boosted && !result.adExpanded && result.C > save.bestCarried) save.bestCarried = result.C;
   }
   if (!result.boosted) save.configName = result.config.id;
   // 图鉴：揭示即点亮并累计次数（被抓/丢弃过的也算摸到过）
@@ -1082,7 +1114,7 @@ function recordResult(save, result) {
     t: Date.now(), outcome: result.outcome,
     value: result.outcome === 'caught' ? result.I : result.C,
     rating: result.rating, warehouse: result.warehouse.id, config: result.config.id,
-    opens: result.opens, hasRed: result.hasRed, boosted: !!result.boosted,
+    opens: result.opens, hasRed: result.hasRed, boosted: !!result.boosted, assisted: !!result.adExpanded,
   });
   save.history = save.history.slice(0, 30);
   // 成就判定（基于入账后的累计状态 + 本局结果）
@@ -1125,56 +1157,56 @@ function recordResult(save, result) {
 }
 
 /* ===== src/ads.js ===== */
-// 激励广告点位接口
-// 红线：广告加成 A 永远独立记账，不进带出价值 C / 评级 / 纪录 / 分享卡主数字（ADR-007）
+// 激励广告点位接口（ADR-026 爽局 / ADR-032 全量广告位）
+// 红线：广告收益永远独立记账——不进评级、不进最佳纪录（爽局/广告扩容的局打助力标，见 save.recordResult）
 // 虎扑容器桥（与《乱世拼将》同款 vatask，实测口径）：
 //   window.ColorboxAI.vatask.completeRewardVideo() → {code:200, data:{rewarded}}
 //   window.ColorboxAI.vatask.getActivityTaskState() → {code:200, data:{tasks:[{taskCode:'reward', status:'completed'}]}}
-// 容器可能在广告期间重载页面：拉起前先落 PENDING 标记，重载后凭平台任务状态核对补发（30 分钟内有效）。
+// 容器可能在广告期间重载页面：拉起前先落 PENDING 标记（含点位与上下文），重载后凭平台任务状态核对补发（30 分钟内有效）。
 const PENDING_KEY = 'dajin_pending_ad';
 
 function vataskReady() {
   return typeof window !== 'undefined' && !!(window.ColorboxAI && window.ColorboxAI.vatask && typeof window.ColorboxAI.vatask.completeRewardVideo === 'function');
 }
 
+// 统一激励观看：kind ∈ boost 爽局 / rescue 被抓救援 / coin 结算仓币加成 / expand 满仓扩容 / supply 每日补给
+// 容器内走真激励视频；无容器环境（Pages/本地）为占位模拟（simulated:true，UI 明示）。
+async function watchReward(kind, context = {}) {
+  if (!vataskReady()) return { granted: true, simulated: true };
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify({ type: kind, ts: Date.now(), ...context })); } catch { /* 标记失败不阻塞拉起 */ }
+  try {
+    const res = await window.ColorboxAI.vatask.completeRewardVideo();
+    const ok = !!(res && res.code === 200 && res.data && res.data.rewarded);
+    try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
+    return ok ? { granted: true, simulated: false } : { granted: false, simulated: false, message: (res && res.message) || '未获得奖励' };
+  } catch {
+    try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
+    return { granted: false, simulated: false, message: '广告拉起失败，请重试' };
+  }
+}
+
 const Ads = {
-  // 爽局升级（ADR-026）：本趟出击（本局＋连锁后续仓）出货率升 A 配置；每趟限 1 次。
-  // 虎扑容器内走真激励视频；无容器环境（Pages/本地）为占位模拟（simulated:true，UI 明示）。
-  async boostRun() {
-    if (!vataskReady()) return { granted: true, simulated: true };
-    try { localStorage.setItem(PENDING_KEY, JSON.stringify({ type: 'boost', ts: Date.now() })); } catch { /* 标记失败不阻塞拉起 */ }
-    try {
-      const res = await window.ColorboxAI.vatask.completeRewardVideo();
-      const ok = !!(res && res.code === 200 && res.data && res.data.rewarded);
-      try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
-      return ok ? { granted: true, simulated: false } : { granted: false, simulated: false, message: (res && res.message) || '未获得奖励' };
-    } catch {
-      try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
-      return { granted: false, simulated: false, message: '广告拉起失败，请重试' };
-    }
-  },
-  // 开机恢复：广告期间页面被容器重载时，凭 PENDING 标记 + 平台任务状态补发爽局（返回 true = 应给下趟出击备好爽局）
-  async recoverPendingBoost() {
+  // 爽局升级（ADR-026）：本趟出击（本局＋连锁后续仓）出货率升 A 配置；每趟限 1 次
+  boostRun() { return watchReward('boost'); },
+  // 其余点位（ADR-032）统一入口
+  watch(kind, context) { return watchReward(kind, context); },
+  // 开机恢复：广告期间页面被容器重载时，凭 PENDING 标记 + 平台任务状态核对；
+  // 核实完成返回标记对象 {type, ts, runId?, amount?}（发放口径在 main 按点位处理），否则 null
+  async recoverPending() {
     let raw = null;
     try { raw = localStorage.getItem(PENDING_KEY); if (raw) localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
-    if (!raw || !vataskReady() || typeof window.ColorboxAI.vatask.getActivityTaskState !== 'function') return false;
+    if (!raw || !vataskReady() || typeof window.ColorboxAI.vatask.getActivityTaskState !== 'function') return null;
     try {
       const j = JSON.parse(raw);
-      if (!j || j.type !== 'boost' || Date.now() - (j.ts || 0) > 30 * 60 * 1000) return false;
+      if (!j || !j.type || Date.now() - (j.ts || 0) > 30 * 60 * 1000) return null;
       const st = await window.ColorboxAI.vatask.getActivityTaskState();
       if (st && st.code === 200 && st.data) {
         const task = (st.data.tasks || []).find(x => x.taskCode === 'reward');
-        return !!(task && task.status === 'completed');
+        if (task && task.status === 'completed') return j;
       }
     } catch { /* 核对失败不发 */ }
-    return false;
+    return null;
   },
-  // 撤离结算 +30%（每局限 1 次，五期）
-  async settlementBonus() { return { granted: false, rate: 0.3 }; },
-  // 被抓挽回：保住第二贵的 1 件（每局限 1 次，五期）
-  async rescueSecondItem() { return { granted: false }; },
-  // 背包满临时 +4 格（每局限 1 次，五期）
-  async expandBag() { return { granted: false, extraCells: 4 }; },
 };
 
 /* ===== src/ui/sharecard.js ===== */
@@ -1321,6 +1353,8 @@ let busy = false;
 let discardSel = new Set();
 let recorded = false;
 let lastCoins = { run: 0, bonus: 0 };
+let lastResultRef = null; // 当前结算页对应的 result（广告救援/加成操作它）
+let lastHistEntry = null; // 本局刚写入的战绩条目（救援后同步其 value）
 let chainNextLeg = 1;   // M3 连锁：下一局的仓序（会话内有效，刷新即断链）
 let shopCtx = null;     // M3 局前商店上下文
 let boostChain = false; // 广告爽局（ADR-026）：本趟出击是否已激活爽局（连锁整趟有效，被抓/新出击重置）
@@ -1334,7 +1368,7 @@ function saveRunCheckpoint() {
     v: 1, ts: Date.now(), boostChain,
     ctor: {
       configId: run.config.id, warehouseId: run.warehouse.id, seed: run.seed,
-      extraCells: run.bagCapacity - SHARED.backpackCols * SHARED.backpackRows,
+      extraCells: run.baseExtraCells ?? 0, // 局内广告扩容不进构造参数，靠动作日志回放（ADR-032）
       dualInsurance: run.insuranceCount >= 2,
       smokeBombs: run.smoke + run.actionLog.filter(a => a[0] === 'smoke').length,
       chainLeg: run.chainLeg, runId: run.runId, boosted: run.boosted,
@@ -1375,6 +1409,9 @@ function renderHome() {
   const v = save.vouchers ?? {};
   const vtxt = ((v.secret ?? 0) + (v.topsecret ?? 0)) > 0 ? ` · 🎟 体验券 机密×${v.secret ?? 0} / 绝密×${v.topsecret ?? 0}` : '';
   $('econ-line').replaceChildren(document.createTextNode('🪙 仓币 '), mk('b', null, String(save.coins ?? 0)), document.createTextNode(vtxt));
+  const supBtn = $('btn-supply');
+  if (save.lastSupplyDay === todayStr()) { supBtn.textContent = '📺 今日补给已领 ✓'; supBtn.disabled = true; }
+  else { supBtn.textContent = `📺 每日补给 · 看广告 +${ECONOMY.ads.supplyCoins} 🪙`; supBtn.disabled = false; }
   document.querySelectorAll('#config-seg .seg-btn').forEach(b => b.classList.toggle('on', b.dataset.cfg === currentConfig));
 }
 document.querySelectorAll('#config-seg .seg-btn').forEach(b =>
@@ -1394,7 +1431,7 @@ renderHome();
 let playerNick = null; // 虎扑昵称（容器内拉取，海报与发帖用；取不到为 null）
 // 平台恢复（虎扑容器内，异步不阻塞首屏）：
 // 1) 广告期间页面被重载 → 凭平台任务状态补发爽局；2) 本地空存档 → 从云存档恢复进度
-Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {});
+handleAdRecovery();
 fetchNickname().then(n => { if (n) playerNick = n; }).catch(() => {});
 restoreCloudSaveIfLocalEmpty(save).then(restored => {
   if (restored) { save = Object.assign(loadSave(), restored); storeSave(save); applySoundUI(); renderHome(); } // 云档压在默认档上合并，缺字段不炸
@@ -1441,7 +1478,7 @@ renderHome();
 let playerNick = null; // 虎扑昵称（容器内拉取，海报与发帖用；取不到为 null）
 // 平台恢复（虎扑容器内，异步不阻塞首屏）：
 // 1) 广告期间页面被重载 → 凭平台任务状态补发爽局；2) 本地空存档 → 从云存档恢复进度
-Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {});
+handleAdRecovery();
 fetchNickname().then(n => { if (n) playerNick = n; }).catch(() => {});
 restoreCloudSaveIfLocalEmpty(save).then(restored => {
   if (restored) { save = Object.assign(loadSave(), restored); storeSave(save); applySoundUI(); renderHome(); } // 云档压在默认档上合并，缺字段不炸
@@ -1455,6 +1492,47 @@ if (desktopAvailable()) {
     if (r.message) { dBtn.textContent = r.message; setTimeout(() => { dBtn.textContent = '📲 添加到桌面'; }, 2400); }
   });
 } show('screen-home'); });
+
+// ---------- 广告点位（ADR-032） ----------
+function todayStr() { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; }
+function creditCoins(n) { save.coins += n; save.coinsEarned += n; storeSave(save); }
+$('btn-supply').addEventListener('click', async () => {
+  if (save.lastSupplyDay === todayStr()) return;
+  const btn = $('btn-supply');
+  btn.disabled = true;
+  $('supply-note').textContent = '广告播放中…';
+  const r = await Ads.watch('supply');
+  if (r.simulated && !FAST) await delay(900);
+  if (r.granted) {
+    save.lastSupplyDay = todayStr();
+    creditCoins(ECONOMY.ads.supplyCoins);
+    renderHome();
+    $('supply-note').textContent = `补给到账 +${ECONOMY.ads.supplyCoins} 🪙${r.simulated ? '（试玩版模拟广告）' : ''}`;
+  } else {
+    btn.disabled = false;
+    $('supply-note').textContent = r.message || '广告未看完，补给未发放。';
+  }
+});
+// 广告期间页面被重载 → 开机补发（幂等：补给看日期、结算加成看 runId、其余看标记时间戳）
+function handleAdRecovery() {
+  Ads.recoverPending().then(rec => {
+    if (!rec) return;
+    if (save.lastAdClaimTs === rec.ts) return;
+    save.lastAdClaimTs = rec.ts;
+    if (rec.type === 'boost') { boostCredit = true; storeSave(save); return; }
+    if (rec.type === 'supply') {
+      if (save.lastSupplyDay !== todayStr()) { save.lastSupplyDay = todayStr(); creditCoins(ECONOMY.ads.supplyCoins); $('supply-note').textContent = `📺 广告补给已补发 +${ECONOMY.ads.supplyCoins} 🪙`; }
+      else storeSave(save);
+    } else if (rec.type === 'coin') {
+      if (rec.runId && save.lastAdCoinRunId !== rec.runId && rec.amount > 0) { save.lastAdCoinRunId = rec.runId; creditCoins(rec.amount); $('supply-note').textContent = `📺 广告仓币加成已补发 +${rec.amount} 🪙`; }
+      else storeSave(save);
+    } else { // rescue / expand：原局上下文已随重载丢失 → 折算仓币补偿
+      creditCoins(ECONOMY.ads.recoveryCompCoins);
+      $('supply-note').textContent = `📺 广告奖励已补发 +${ECONOMY.ads.recoveryCompCoins} 🪙（页面刷新过，原局奖励折算为仓币）`;
+    }
+    renderHome();
+  }).catch(() => {});
+}
 
 // ---------- 选仓 ----------
 function renderWarehouses() {
@@ -1592,6 +1670,7 @@ function startRun(warehouse, opts = {}) {
   setupRunScreen(warehouse);
   setEvent('点任意一格开始搜。越往深处，好货越多。', false);
 }
+function bagTitleText() { return run && run.bagCapacity > 20 ? `背包（5×4 + 扩容${run.bagCapacity - 20}）` : '背包（5×4）'; }
 // 局内界面初始化（新局与重载恢复共用）：重置局内会话态、重建格子并渲染
 function setupRunScreen(warehouse) {
   recorded = false;
@@ -1599,7 +1678,7 @@ function setupRunScreen(warehouse) {
   discardSel = new Set();
   $('run-seed').textContent = run.seed;
   $('run-meta').textContent = `${warehouse.name} · ${run.boosted ? '📺 爽局（出货率↑）' : 'B 稀有'}${run.chainLeg > 1 ? ` · 🔗 连锁第 ${run.chainLeg} 仓` : ''}`;
-  $('bag-title').textContent = run.bagCapacity > 20 ? '背包（5×4 + 扩容2）' : '背包（5×4）';
+  $('bag-title').textContent = bagTitleText();
   {
     const cellsEl = $('cells');
     cellsEl.replaceChildren();
@@ -1788,10 +1867,32 @@ function openPending() {
   el.textContent = `${p.icon} ${p.name}（${TIER_NAMES[p.tier]}）· ${fmtWan(p.value)} 万 · 占 ${p.size} 格`;
   el.append(mk('small', null, p.desc));
   $('pending-note').textContent = '这件放不下。丢几件腾位（每件 +5 警戒），放弃这件，还是见好就收？';
+  $('btn-pend-expand').classList.toggle('hidden', !!run.adExpanded);
   $('discard-panel').classList.add('hidden');
   $('pending-btns').classList.remove('hidden');
   $('pending-modal').classList.remove('hidden');
 }
+$('btn-pend-expand').addEventListener('click', async () => {
+  if (!run || run.phase !== 'pending' || run.adExpanded) return;
+  const btn = $('btn-pend-expand');
+  btn.disabled = true;
+  $('pending-note').textContent = '广告播放中…';
+  const r = await Ads.watch('expand', { runId: run.runId });
+  if (r.simulated && !FAST) await delay(900);
+  btn.disabled = false;
+  if (!r.granted) { $('pending-note').textContent = r.message || '广告未看完，扩容未生效。'; return; }
+  const res = run.expandBagAd();
+  $('bag-title').textContent = bagTitleText();
+  if (res.placed) {
+    $('pending-modal').classList.add('hidden');
+    setEvent(`📺 临时扩容 +4 格——「${run.reveals[run.reveals.length - 1]?.name ?? '宝贝'}」放下了！（本局算广告助力，最佳纪录不认）`, false);
+    renderRun(run.bagValue());
+  } else {
+    renderRun(run.bagValue());
+    $('pending-note').textContent = '已扩容 +4 格（本局有效），但这件还是放不下——丢几件腾位吧。';
+    btn.classList.add('hidden');
+  }
+});
 $('btn-pend-discard').addEventListener('click', () => {
   discardSel = new Set();
   $('pending-btns').classList.add('hidden');
@@ -1868,8 +1969,10 @@ function finishToResult(result) {
     const rr = recordResult(save, result);
     save = rr.save; unlocked = rr.unlocked; recorded = true;
     lastCoins = { run: rr.runCoins ?? 0, bonus: rr.bonusCoins ?? 0 };
+    lastHistEntry = save.history[0] ?? null;
     newSeen = [...new Set((result.reveals ?? []).map(r => r.itemId))].filter(id => !before.has(id));
   }
+  lastResultRef = result;
   const body = $('result-body');
   body.replaceChildren();
   const headEl = (cls, txt) => { const hd = mk('div', `result-head ${cls}`); hd.append(mk('div', 'big', txt)); return hd; };
@@ -1888,6 +1991,7 @@ function finishToResult(result) {
     body.append(mk('p', 'top-item', (result.insuredItems ?? []).length
       ? `🔒 保险保住了：${result.insuredItems.map(i => `${i.icon} ${i.name} ${fmtWan(i.value)} 万`).join('、')}`
       : '背包是空的，什么都没保住。'));
+    if (result.rescued) body.append(mk('p', 'top-item', '📺 广告救援：多保住了一件（已计入保险保留）。'));
   } else {
     body.append(headEl('win', result.outcome === 'cleared' ? '整仓搬空' : '撤离成功'));
     body.append(mk('p', 'result-sub', `${result.warehouse.name} · ${result.boosted ? '📺广告爽局' : result.config.label} · 开了 ${result.opens} 格 · 警戒 ${result.alert}`));
@@ -1903,6 +2007,7 @@ function finishToResult(result) {
     rows.push(ledgerRow('最终到手', `${fmtWan(result.final)} 万`, 'row total'));
     rows.push(ledgerRow(`仓币折算（风险 R ${result.riskR.toFixed(2)} · ×${result.coinRate}${result.chainMult > 1 ? ` · 连锁 ×${result.chainMult}` : ''}）`, `+${lastCoins.run} 🪙`, 'row coin-row'));
     if (lastCoins.bonus > 0) rows.push(ledgerRow('成就 / 套装奖励', `+${lastCoins.bonus} 🪙`, 'row coin-row'));
+    if (result.coinBonusApplied > 0) rows.push(ledgerRow('广告加成 · 仓币 +50%', `+${result.coinBonusApplied} 🪙`, 'row coin-row'));
     body.append(ledgerEl(rows));
     body.append(mk('p', 'top-item', `${result.topItem ? `最贵单品：${result.topItem.icon} ${result.topItem.name}（${TIER_NAMES[result.topItem.tier]}）${fmtWan(result.topItem.value)} 万` : ''}${result.hasRed ? ' · 本局出过大金！' : ''}`));
   }
@@ -1925,6 +2030,9 @@ function finishToResult(result) {
   }
   clearRunCheckpoint();
   renderHome();
+  $('btn-rescue').classList.toggle('hidden', !(result.outcome === 'caught' && !result.rescued && rescueCandidate(result)));
+  $('btn-coinbonus').classList.toggle('hidden', !(result.outcome !== 'caught' && !result.coinBonusApplied && Math.floor((lastCoins.run ?? 0) * ECONOMY.ads.coinBonusRate) > 0));
+  $('ad-note').textContent = '';
   $('btn-post').classList.toggle('hidden', !inContainer()); // 发帖晒战绩仅虎扑容器内可用
   $('btn-share').classList.toggle('hidden', inContainer()); // 容器内以发帖分享（平台规范路径）
   $('post-note').textContent = '';
@@ -1932,6 +2040,49 @@ function finishToResult(result) {
   window.__DAJIN_LAST_CARD__ = manifest;
   show('screen-result');
 }
+// 广告救援候选：背包里最贵的未保险物品（ADR-032）
+function rescueCandidate(result) {
+  const ins = new Set((result.insuredItems ?? []).map(i => i.uid));
+  return (result.items ?? []).find(i => !ins.has(i.uid)) ?? null;
+}
+$('btn-rescue').addEventListener('click', async () => {
+  const result = lastResultRef;
+  const cand = result && rescueCandidate(result);
+  if (!result || !cand || result.rescued) return;
+  const btn = $('btn-rescue');
+  btn.disabled = true;
+  $('ad-note').textContent = '广告播放中…';
+  const r = await Ads.watch('rescue', { runId: result.runId });
+  if (r.simulated && !FAST) await delay(900);
+  btn.disabled = false;
+  if (!r.granted) { $('ad-note').textContent = r.message || '广告未看完，救援未生效。'; return; }
+  result.insuredItems = [...(result.insuredItems ?? []), cand].sort((a, b) => b.value - a.value);
+  result.I = Math.round(result.insuredItems.reduce((sum, i) => sum + i.value, 0) * 10) / 10;
+  result.C = result.I; result.final = result.I;
+  result.rescued = true;
+  save.totalInsurance = Math.round((save.totalInsurance + cand.value) * 10) / 10;
+  if (lastHistEntry) lastHistEntry.value = result.I;
+  storeSave(save);
+  finishToResult(result);
+  $('ad-note').textContent = `救援成功：${cand.icon} ${cand.name} 也保住了！${r.simulated ? '（试玩版模拟广告）' : ''}`;
+});
+$('btn-coinbonus').addEventListener('click', async () => {
+  const result = lastResultRef;
+  if (!result || result.coinBonusApplied) return;
+  const amount = Math.floor((lastCoins.run ?? 0) * ECONOMY.ads.coinBonusRate);
+  if (amount <= 0) return;
+  const btn = $('btn-coinbonus');
+  btn.disabled = true;
+  $('ad-note').textContent = '广告播放中…';
+  const r = await Ads.watch('coin', { runId: result.runId, amount });
+  if (r.simulated && !FAST) await delay(900);
+  btn.disabled = false;
+  if (!r.granted) { $('ad-note').textContent = r.message || '广告未看完，加成未生效。'; return; }
+  if (save.lastAdCoinRunId !== result.runId) { save.lastAdCoinRunId = result.runId; creditCoins(amount); }
+  result.coinBonusApplied = amount;
+  finishToResult(result);
+  $('ad-note').textContent = `仓币加成到账 +${amount} 🪙${r.simulated ? '（试玩版模拟广告）' : ''}`;
+});
 let posting = false;
 $('btn-post').addEventListener('click', async () => {
   if (posting || !run) return;
@@ -1986,7 +2137,7 @@ renderHome();
 let playerNick = null; // 虎扑昵称（容器内拉取，海报与发帖用；取不到为 null）
 // 平台恢复（虎扑容器内，异步不阻塞首屏）：
 // 1) 广告期间页面被重载 → 凭平台任务状态补发爽局；2) 本地空存档 → 从云存档恢复进度
-Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {});
+handleAdRecovery();
 fetchNickname().then(n => { if (n) playerNick = n; }).catch(() => {});
 restoreCloudSaveIfLocalEmpty(save).then(restored => {
   if (restored) { save = Object.assign(loadSave(), restored); storeSave(save); applySoundUI(); renderHome(); } // 云档压在默认档上合并，缺字段不炸
@@ -2063,7 +2214,7 @@ function renderHistory() {
     const row = mk('div', `hist-row${hst.outcome === 'caught' ? ' caught' : ''}`);
     const left = mk('span');
     left.append(document.createTextNode(`${label} · ${whName(hst.warehouse)} `),
-      mk('span', 'h-meta', `${when} · 开 ${hst.opens} 格${hst.hasRed ? ' · 出大金' : ''}${hst.rating ? ` · ${hst.rating} 级` : ''}${hst.boosted ? ' · 📺爽局' : ''}`));
+      mk('span', 'h-meta', `${when} · 开 ${hst.opens} 格${hst.hasRed ? ' · 出大金' : ''}${hst.rating ? ` · ${hst.rating} 级` : ''}${hst.boosted ? ' · 📺爽局' : hst.assisted ? ' · 📺助力' : ''}`));
     row.append(left, mk('span', 'h-val', `${fmtWan(hst.value)} 万`));
     hb.append(row);
   }
@@ -2092,7 +2243,7 @@ renderHome();
 let playerNick = null; // 虎扑昵称（容器内拉取，海报与发帖用；取不到为 null）
 // 平台恢复（虎扑容器内，异步不阻塞首屏）：
 // 1) 广告期间页面被重载 → 凭平台任务状态补发爽局；2) 本地空存档 → 从云存档恢复进度
-Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {});
+handleAdRecovery();
 fetchNickname().then(n => { if (n) playerNick = n; }).catch(() => {});
 restoreCloudSaveIfLocalEmpty(save).then(restored => {
   if (restored) { save = Object.assign(loadSave(), restored); storeSave(save); applySoundUI(); renderHome(); } // 云档压在默认档上合并，缺字段不炸
