@@ -388,12 +388,13 @@ const CONFIGS = {
   A: {
     id: 'A', label: 'A 爽局', desc: '出货率高，爽感直接',
     tierWeights: { 0: 0.28, 1: 0.30, 2: 0.22, 3: 0.11, 4: 0.06, 5: 0.03 },
-    ratingThresholdsWan: { S: 225, A: 160, B: 52 },
+    // 评级线按仓分线（ADR-027 定版）：各仓撤离分位 p92/p75/p50，S≈8%/仓
+    ratingThresholdsWan: { normal: { S: 235, A: 170, B: 60 }, secret: { S: 305, A: 205, B: 125 }, topsecret: { S: 350, A: 235, B: 165 } },
   },
   B: {
     id: 'B', label: 'B 稀有', desc: '大金稀有，晒图有面',
     tierWeights: { 0: 0.32, 1: 0.32, 2: 0.21, 3: 0.095, 4: 0.04, 5: 0.015 },
-    ratingThresholdsWan: { S: 193, A: 80, B: 36 },
+    ratingThresholdsWan: { normal: { S: 200, A: 115, B: 38 }, secret: { S: 225, A: 160, B: 56 }, topsecret: { S: 270, A: 195, B: 85 } },
   },
 };
 const DEFAULT_CONFIG = 'B';
@@ -814,7 +815,7 @@ class Run {
     const bonus = this.alert < SHARED.earlyEvacBonusBelowAlert ? Math.round(C * SHARED.earlyEvacBonusRate * 10) / 10 : 0;
     return {
       outcome: this.outcome, G, C, I: 0, bonus, final: Math.round((C + bonus) * 10) / 10,
-      rating: rateOf(C, this.config.ratingThresholdsWan), insuredItem: this.insuredItem(), insuredItems: this.insuredItems(), topItem,
+      rating: rateOf(C, this.config.ratingThresholdsWan[this.warehouse.id]), insuredItem: this.insuredItem(), insuredItems: this.insuredItems(), topItem,
       opens: this.opens, items, hasRed: this.hasRed, seed: this.seed, reveals: this.reveals,
       warehouse: this.warehouse, config: this.config, alert: this.alert,
       // M3 仓币：基数只认原始带出 C（不含早撤加成/广告加成），整仓向下取整一次
@@ -985,13 +986,50 @@ function recordResult(save, result) {
 }
 
 /* ===== src/ads.js ===== */
-// 激励广告点位接口（一期全部 no-op 占位，五期接虎扑激励视频）
+// 激励广告点位接口
 // 红线：广告加成 A 永远独立记账，不进带出价值 C / 评级 / 纪录 / 分享卡主数字（ADR-007）
+// 虎扑容器桥（与《乱世拼将》同款 vatask，实测口径）：
+//   window.ColorboxAI.vatask.completeRewardVideo() → {code:200, data:{rewarded}}
+//   window.ColorboxAI.vatask.getActivityTaskState() → {code:200, data:{tasks:[{taskCode:'reward', status:'completed'}]}}
+// 容器可能在广告期间重载页面：拉起前先落 PENDING 标记，重载后凭平台任务状态核对补发（30 分钟内有效）。
+const PENDING_KEY = 'dajin_pending_ad';
+
+function vataskReady() {
+  return typeof window !== 'undefined' && !!(window.ColorboxAI && window.ColorboxAI.vatask && typeof window.ColorboxAI.vatask.completeRewardVideo === 'function');
+}
+
 const Ads = {
   // 爽局升级（ADR-026）：本趟出击（本局＋连锁后续仓）出货率升 A 配置；每趟限 1 次。
-  // 红线例外说明：爽局只换概率表，不直接给价值——仓币照常按实带出折算，最佳纪录不认爽局（save 层把关）。
-  // 五期接虎扑激励视频；当前为 Pages 占位：模拟完播后 granted（UI 明示「模拟广告」）。
-  async boostRun() { return { granted: true, simulated: true }; },
+  // 虎扑容器内走真激励视频；无容器环境（Pages/本地）为占位模拟（simulated:true，UI 明示）。
+  async boostRun() {
+    if (!vataskReady()) return { granted: true, simulated: true };
+    try { localStorage.setItem(PENDING_KEY, JSON.stringify({ type: 'boost', ts: Date.now() })); } catch { /* 标记失败不阻塞拉起 */ }
+    try {
+      const res = await window.ColorboxAI.vatask.completeRewardVideo();
+      const ok = !!(res && res.code === 200 && res.data && res.data.rewarded);
+      try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
+      return ok ? { granted: true, simulated: false } : { granted: false, simulated: false, message: (res && res.message) || '未获得奖励' };
+    } catch {
+      try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
+      return { granted: false, simulated: false, message: '广告拉起失败，请重试' };
+    }
+  },
+  // 开机恢复：广告期间页面被容器重载时，凭 PENDING 标记 + 平台任务状态补发爽局（返回 true = 应给下趟出击备好爽局）
+  async recoverPendingBoost() {
+    let raw = null;
+    try { raw = localStorage.getItem(PENDING_KEY); if (raw) localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
+    if (!raw || !vataskReady() || typeof window.ColorboxAI.vatask.getActivityTaskState !== 'function') return false;
+    try {
+      const j = JSON.parse(raw);
+      if (!j || j.type !== 'boost' || Date.now() - (j.ts || 0) > 30 * 60 * 1000) return false;
+      const st = await window.ColorboxAI.vatask.getActivityTaskState();
+      if (st && st.code === 200 && st.data) {
+        const task = (st.data.tasks || []).find(x => x.taskCode === 'reward');
+        return !!(task && task.status === 'completed');
+      }
+    } catch { /* 核对失败不发 */ }
+    return false;
+  },
   // 撤离结算 +30%（每局限 1 次，五期）
   async settlementBonus() { return { granted: false, rate: 0.3 }; },
   // 被抓挽回：保住第二贵的 1 件（每局限 1 次，五期）
@@ -1146,6 +1184,7 @@ let lastCoins = { run: 0, bonus: 0 };
 let chainNextLeg = 1;   // M3 连锁：下一局的仓序（会话内有效，刷新即断链）
 let shopCtx = null;     // M3 局前商店上下文
 let boostChain = false; // 广告爽局（ADR-026）：本趟出击是否已激活爽局（连锁整趟有效，被抓/新出击重置）
+let boostCredit = false; // 广告期间页面被容器重载、开机核对补发的爽局额度（供下趟出击，消费一次）
 
 function show(screenId) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -1179,7 +1218,9 @@ $('btn-sound-home').addEventListener('click', toggleSound);
 $('btn-sound-run').addEventListener('click', toggleSound);
 applySoundUI();
 
-renderHome(); }));
+renderHome();
+// 广告期间页面被容器重载 → 开机凭平台任务状态补发爽局（备给下趟出击，商店里会显示生效中）
+Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {}); }));
 $('btn-start').addEventListener('click', () => { renderWarehouses(); show('screen-warehouse'); });
 $('btn-wh-back').addEventListener('click', () => { // ---------- 音效开关 ----------
 function applySoundUI() {
@@ -1192,7 +1233,9 @@ $('btn-sound-home').addEventListener('click', toggleSound);
 $('btn-sound-run').addEventListener('click', toggleSound);
 applySoundUI();
 
-renderHome(); show('screen-home'); });
+renderHome();
+// 广告期间页面被容器重载 → 开机凭平台任务状态补发爽局（备给下趟出击，商店里会显示生效中）
+Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {}); show('screen-home'); });
 
 // ---------- 选仓 ----------
 function renderWarehouses() {
@@ -1228,7 +1271,7 @@ function openShop(warehouse) {
   $('shop-modal').classList.remove('hidden');
   renderShop();
 }
-function boostActiveHere() { return !!(shopCtx?.boostWatched || (chainNextLeg > 1 && boostChain)); }
+function boostActiveHere() { return !!(shopCtx?.boostWatched || boostCredit || (chainNextLeg > 1 && boostChain)); }
 function renderShop() {
   const { warehouse } = shopCtx;
   const fm = shopFeeMethod(warehouse);
@@ -1247,11 +1290,11 @@ function renderShop() {
   const boostBtn = document.querySelector('[data-boost]');
   if (boostBtn) boostBtn.addEventListener('click', async () => {
     boostBtn.disabled = true;
-    $('shop-note').textContent = '广告播放中…（试玩版为模拟广告，虎扑版接真激励视频）';
+    $('shop-note').textContent = '广告播放中…';
     const r = await Ads.boostRun();
-    if (!FAST) await delay(900);
-    if (r.granted) { shopCtx.boostWatched = true; renderShop(); $('shop-note').textContent = '爽局已激活：本趟出击出货率升级！'; }
-    else { boostBtn.disabled = false; $('shop-note').textContent = '广告未看完，爽局未生效。'; }
+    if (r.simulated && !FAST) await delay(900); // 仅模拟广告补一个播放停顿；真广告自带时长
+    if (r.granted) { shopCtx.boostWatched = true; renderShop(); $('shop-note').textContent = r.simulated ? '爽局已激活：本趟出击出货率升级！（试玩版模拟广告）' : '爽局已激活：本趟出击出货率升级！'; }
+    else { boostBtn.disabled = false; $('shop-note').textContent = r.message || '广告未看完，爽局未生效。'; }
   });
   document.querySelectorAll('.shop-row').forEach(r => r.addEventListener('click', () => {
     const key = r.dataset.item;
@@ -1297,9 +1340,9 @@ function startRun(warehouse, opts = {}) {
   const { boostNow = false, ...runOpts } = opts;
   const seed = SEED_PARAM ?? Math.floor(Math.random() * 90000000) + 10000000;
   const leg = chainNextLeg; chainNextLeg = 1;
-  if (leg === 1) boostChain = boostNow;              // 新出击：以本趟商店激活为准
+  if (leg === 1) { boostChain = boostNow || boostCredit; boostCredit = false; } // 新出击：商店激活或重载补发额度
   else if (boostNow) boostChain = true;              // 连锁中途补看广告，整趟生效
-  const boosted = leg === 1 ? boostNow : boostChain;
+  const boosted = boostChain;
   run = new Run({ config: boosted ? CONFIGS.A : CONFIGS.B, warehouse, seed, chainLeg: leg, boosted, ...runOpts });
   recorded = false;
   lastCoins = { run: 0, bonus: 0 };
@@ -1623,7 +1666,9 @@ $('btn-sound-home').addEventListener('click', toggleSound);
 $('btn-sound-run').addEventListener('click', toggleSound);
 applySoundUI();
 
-renderHome(); show('screen-home'); });
+renderHome();
+// 广告期间页面被容器重载 → 开机凭平台任务状态补发爽局（备给下趟出击，商店里会显示生效中）
+Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {}); show('screen-home'); });
 
 // ---------- M2：图鉴 / 成就 / 战绩 ----------
 function collCell(item) {
@@ -1683,6 +1728,8 @@ $('btn-sound-run').addEventListener('click', toggleSound);
 applySoundUI();
 
 renderHome();
+// 广告期间页面被容器重载 → 开机凭平台任务状态补发爽局（备给下趟出击，商店里会显示生效中）
+Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {});
 
 </script>
 </body>
