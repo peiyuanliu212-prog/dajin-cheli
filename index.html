@@ -177,6 +177,20 @@ body.police { animation: police .16s steps(1) 6; }
 .hist-row .h-meta { color: var(--muted); font-size: 12px; }
 .unlock-note { border: 1.5px solid var(--hazard); border-radius: 10px; padding: 10px 12px; margin-top: 12px; background: rgba(245,185,33,.08); font-size: 14px; line-height: 1.7; }
 
+/* M3 经济 UI */
+.econ-line { margin: 10px 0 2px; padding: 8px 12px; font-size: 14px; text-align: center; }
+.econ-line b { color: var(--gold, #d4a017); }
+.wh-fee { display: block; font-size: 12px; opacity: .85; margin-top: 2px; }
+.wh-card.poor { opacity: .55; }
+.shop-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; padding: 9px 10px; margin: 6px 0; border: 1px solid rgba(255,255,255,.14); border-radius: 10px; background: rgba(255,255,255,.04); color: inherit; text-align: left; cursor: pointer; }
+.shop-row.sel { border-color: var(--gold, #d4a017); background: rgba(212,160,23,.12); }
+.shop-row.off { opacity: .45; cursor: default; }
+.shop-row .sr-name { font-weight: 700; }
+.shop-row .sr-desc { display: block; font-size: 12px; opacity: .75; font-weight: 400; }
+.shop-fee { padding: 8px 10px; margin: 6px 0; border-radius: 10px; background: rgba(255,255,255,.05); font-size: 14px; }
+.shop-total { text-align: right; font-weight: 700; padding: 4px 2px; }
+.coin-row b { color: var(--gold, #d4a017); }
+
 </style>
 </head>
 <body>
@@ -194,6 +208,7 @@ body.police { animation: police .16s steps(1) 6; }
       <div class="rec"><span>累计保险保留</span><b id="rec-ins">0 万</b></div>
       <div class="rec"><span>战绩</span><b id="rec-runs">0 局</b></div>
     </div>
+    <div class="econ-line card" id="econ-line"></div>
     <div class="config-switch">
       <span class="cs-label">概率配置</span>
       <div class="seg" id="config-seg">
@@ -214,7 +229,20 @@ body.police { animation: police .16s steps(1) 6; }
   <!-- 选仓 -->
   <section id="screen-warehouse" class="screen">
     <h2 class="screen-title">选择仓库</h2>
+    <p class="screen-sub" id="wh-hint"></p>
     <div id="warehouse-list"></div>
+    <!-- 局前商店（M3） -->
+    <div id="shop-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3 id="shop-title">出发前准备</h3>
+        <div id="shop-body"></div>
+        <p id="shop-note" class="pending-note"></p>
+        <div class="modal-btns">
+          <button id="btn-shop-go" class="btn-primary">开始搜刮</button>
+          <button id="btn-shop-cancel" class="btn-ghost">再想想</button>
+        </div>
+      </div>
+    </div>
     <button id="btn-wh-back" class="btn-ghost">← 返回</button>
   </section>
 
@@ -241,10 +269,11 @@ body.police { animation: police .16s steps(1) 6; }
     <div id="cells" class="cells"></div>
     <p id="event-line" class="event-line">点任意一格开始搜。</p>
 
-    <div class="bag-head"><span>背包（5×4）</span><span id="bag-cells-info">0/20 格</span></div>
+    <div class="bag-head"><span id="bag-title">背包（5×4）</span><span id="bag-cells-info">0/20 格</span></div>
     <div id="bag" class="bag"></div>
 
     <button id="btn-evac" class="btn-primary evac">撤离 · 带走 0 万</button>
+    <button id="btn-smoke" class="btn-ghost hidden" style="width:100%;margin-top:8px">💨 烟雾弹 · 警戒 −15</button>
     <p class="seed-line">本局种子 <span id="run-seed"></span> · <span id="run-meta"></span></p>
 
     <!-- 满仓待处置 -->
@@ -273,6 +302,7 @@ body.police { animation: police .16s steps(1) 6; }
   <!-- 结算 -->
   <section id="screen-result" class="screen">
     <div id="result-body"></div>
+    <div class="modal-btns"><button id="btn-chain" class="btn-primary hidden" style="flex:1">🔗 继续下一仓</button></div>
     <canvas id="share-canvas" width="720" height="960"></canvas>
     <div class="modal-btns">
       <button id="btn-share" class="btn-ghost">保存战绩图</button>
@@ -396,6 +426,28 @@ function depthNameAt(opens) {
   return ['浅层', '中层', '深层'][Math.min(2, Math.floor(opens / 5))];
 }
 
+// M3 经济系统（设计案 v0.2 冻结，ADR-025）：仓币折算/入场费/道具/连锁
+const ECONOMY = {
+  rateBands: [[0.05, 0.2], [0.25, 0.5], [0.55, 1.0], [Infinity, 1.5]], // 对未取整 R 查表
+  entryFees: { normal: 0, secret: 20, topsecret: 50 },
+  shop: {
+    smoke: { price: 30, name: '烟雾弹', desc: '局内使用：警戒 −15，每局 1 个', alertCut: 15 },
+    expand: { price: 40, name: '扩容贴', desc: '本局背包 +2 格（20→22）', cells: 2 },
+    dualins: { price: 60, name: '双保险', desc: '本局保险保最贵的两件' },
+  },
+  chainMult: [1, 1.15, 1.25, 1.3], // 按连锁仓序（1 起），第 4 仓起封顶
+  achievementCoin: 20,
+  setCoin: 100,
+};
+function coinRateAt(R) {
+  for (const [t, r] of ECONOMY.rateBands) if (R < t) return r;
+  return ECONOMY.rateBands[ECONOMY.rateBands.length - 1][1];
+}
+function chainMultAt(leg) {
+  const i = Math.min(Math.max(1, leg) - 1, ECONOMY.chainMult.length - 1);
+  return ECONOMY.chainMult[i];
+}
+
 /* ===== src/rng.js ===== */
 // 可复现随机：mulberry32 + 五条独立随机流（与模拟器 v2 同口径）
 // 同一 seed 的整局流程可逐位复现，供测试与玩家复盘。
@@ -514,14 +566,14 @@ function setProgress(setId, collection) {
 
 const SHAPES = { 1: [[1, 1]], 2: [[2, 1], [1, 2]], 3: [[3, 1], [1, 3]], 4: [[2, 2]] };
 
-function newGrid() {
-  return Array.from({ length: SHARED.backpackRows }, () => Array(SHARED.backpackCols).fill(false));
+function newGrid(rows = SHARED.backpackRows) {
+  return Array.from({ length: rows }, () => Array(SHARED.backpackCols).fill(false));
 }
 
 // 在给定 grid 上尝试摆放 size 格物品；成功返回占用的 cells 并就地标记，失败返回 null（grid 不变）
 function tryPlaceOn(grid, size) {
   for (const [w, h] of SHAPES[size]) {
-    for (let y = 0; y + h <= SHARED.backpackRows; y++) {
+    for (let y = 0; y + h <= grid.length; y++) {
       for (let x = 0; x + w <= SHARED.backpackCols; x++) {
         let ok = true;
         for (let dy = 0; dy < h && ok; dy++)
@@ -539,9 +591,10 @@ function tryPlaceOn(grid, size) {
 }
 
 // 重排救援：全部物品按占格降序、估值降序重摆；成功返回 {grid, placed}（placed 为带 cells 的新数组），失败返回 null
-function repack(items) {
+function repack(items, rows = SHARED.backpackRows, blocked = []) {
   const sorted = [...items].sort((a, b) => b.size - a.size || b.value - a.value);
-  const grid = newGrid();
+  const grid = newGrid(rows);
+  for (const [x, y] of blocked) grid[y][x] = true; // 扩容贴的不可用格（幻影行尾格），重排后仍不可用
   const placed = [];
   for (const it of sorted) {
     const cells = tryPlaceOn(grid, it.size);
@@ -589,7 +642,7 @@ function genItem(streams, config, warehouse, opens) {
 // 规则口径：GAME_RULES（R1 时序、R2 保险标记、R3 摆放/重排、丢弃 +5/件；被抓判定为概率坡道，ADR-021）
 
 class Run {
-  constructor({ config, warehouse, seed }) {
+  constructor({ config, warehouse, seed, extraCells = 0, dualInsurance = false, smokeBombs = 0, chainLeg = 1, runId = null }) {
     this.config = config;
     this.warehouse = warehouse;
     this.seed = seed;
@@ -597,9 +650,26 @@ class Run {
     this.alert = 0;
     this.opens = 0;
     this.cellsOpened = new Array(SHARED.cellsPerWarehouse).fill(false);
-    this.grid = newGrid();
+    // M3 扩容贴：+2 格 = 幻影第 5 行只开放前 2 格，其余预标记为不可用（摆放/重排都绕开）
+    this.bagRows = SHARED.backpackRows + (extraCells > 0 ? 1 : 0);
+    this.bagCapacity = SHARED.backpackCols * SHARED.backpackRows + extraCells;
+    this.blockedCells = [];
+    if (extraCells > 0) {
+      const total = this.bagRows * SHARED.backpackCols;
+      for (let k = this.bagCapacity; k < total; k++)
+        this.blockedCells.push([k % SHARED.backpackCols, Math.floor(k / SHARED.backpackCols)]);
+    }
+    this.grid = newGrid(this.bagRows);
+    for (const [x, y] of this.blockedCells) this.grid[y][x] = true;
     this.bag = [];           // {uid, itemId, name, desc, icon, tier, value, size, cells}
-    this.insuredUid = null;  // R2：只是标记，物品仍占格
+    this.insuranceCount = dualInsurance ? 2 : 1; // M3 双保险
+    this.insuredUid = null;  // R2：只是标记，物品仍占格（insuredUids 为现行多件口径）
+    this.insuredUids = [];
+    this.smoke = smokeBombs;         // M3 烟雾弹（局内可用次数）
+    this.chainLeg = chainLeg;        // M3 连锁仓序（1 起）
+    this.chainAlertBonus = chainLeg - 1; // 第 n 仓每格警戒增量 +(n−1)
+    this.surv = 1;                   // M3 累计风险：生存概率连乘，R = 1 − surv（每仓独立，构造即重置）
+    this.runId = runId ?? `${seed}-${Date.now()}`;
     this.gross = 0;          // 搜获总值 G
     this.hasRed = false;
     this.discards = 0;
@@ -615,9 +685,20 @@ class Run {
   insuredItem() { return this.bag.find(i => i.uid === this.insuredUid) ?? null; }
 
   refreshInsurance() {
-    let best = null;
-    for (const i of this.bag) if (!best || i.value > best.value) best = i;
-    this.insuredUid = best ? best.uid : null;
+    const sorted = [...this.bag].sort((a, b) => b.value - a.value);
+    this.insuredUids = sorted.slice(0, this.insuranceCount).map(i => i.uid);
+    this.insuredUid = this.insuredUids[0] ?? null;
+  }
+  insuredItems() {
+    return this.bag.filter(i => this.insuredUids.includes(i.uid)).sort((a, b) => b.value - a.value);
+  }
+
+  // M3 烟雾弹：只降当前警戒，surv（已累计风险 R）不回滚
+  useSmoke() {
+    if (this.phase === 'over' || this.smoke <= 0) return false;
+    this.smoke -= 1;
+    this.alert = Math.max(0, this.alert - ECONOMY.shop.smoke.alertCut);
+    return true;
   }
 
   // 尝试把 item 放进背包（首适→重排），成功返回 true
@@ -625,7 +706,7 @@ class Run {
     const entry = { ...item, uid: this.uidSeq++ };
     let cells = tryPlaceOn(this.grid, entry.size);
     if (cells) { entry.cells = cells; this.bag.push(entry); this.refreshInsurance(); return true; }
-    const rp = repack([...this.bag, entry]);
+    const rp = repack([...this.bag, entry], this.bagRows, this.blockedCells);
     if (rp) { this.grid = rp.grid; this.bag = rp.placed; this.refreshInsurance(); return true; }
     return false;
   }
@@ -636,7 +717,7 @@ class Run {
     const bonus = SHARED.depthAlertBonus[Math.min(2, Math.floor(this.opens / 5))];
     const n = alertMax - alertMin + 1;
     let sum = 0;
-    for (let d = alertMin; d <= alertMax; d++) sum += catchProbAt(this.alert + d + bonus);
+    for (let d = alertMin; d <= alertMax; d++) sum += catchProbAt(this.alert + d + bonus + this.chainAlertBonus);
     return sum / n;
   }
 
@@ -645,10 +726,10 @@ class Run {
     // R1-②③：先抽增量并累加（深层区另有固定加成，计入 inc 一并展示）
     const { alertMin, alertMax } = this.warehouse;
     const depthBonus = SHARED.depthAlertBonus[Math.min(2, Math.floor(this.opens / 5))];
-    const inc = alertMin + Math.floor(this.streams.alert() * (alertMax - alertMin + 1)) + depthBonus;
+    const inc = alertMin + Math.floor(this.streams.alert() * (alertMax - alertMin + 1)) + depthBonus + this.chainAlertBonus;
     this.alert += inc;
     // 坡道判定（ADR-021）：按增后警戒掷骰，掷中当场被抓、本格不揭示；警戒可超过 100
-    { const p = catchProbAt(this.alert); if (p > 0 && this.streams.luck() < p) return this.doCaught(inc); }
+    { const p = catchProbAt(this.alert); if (p > 0) { this.surv *= (1 - p); if (this.streams.luck() < p) return this.doCaught(inc); } } // M3：实际执行检定即计入 R（与骰果无关）
     // R1-⑤：揭示
     this.cellsOpened[idx] = true;
     this.opens++;
@@ -713,22 +794,29 @@ class Run {
     const G = Math.round(this.gross * 10) / 10;
     const items = [...this.bag].sort((a, b) => b.value - a.value);
     const topItem = items[0] ?? null;
+    const riskR = 1 - this.surv;
+    const coinRate = coinRateAt(riskR);
+    const chainMult = chainMultAt(this.chainLeg);
     if (this.outcome === 'caught') {
-      const ins = this.insuredItem();
+      const insItems = this.insuredItems();
+      const I = Math.round(insItems.reduce((s2, i) => s2 + i.value, 0) * 10) / 10;
       return {
-        outcome: 'caught', G, C: ins ? ins.value : 0, I: ins ? ins.value : 0, bonus: 0,
-        final: ins ? ins.value : 0, rating: null, insuredItem: ins, topItem,
+        outcome: 'caught', G, C: I, I, bonus: 0,
+        final: I, rating: null, insuredItem: insItems[0] ?? null, insuredItems: insItems, topItem,
         opens: this.opens, items, hasRed: this.hasRed, seed: this.seed, reveals: this.reveals,
         warehouse: this.warehouse, config: this.config, alert: this.alert,
+        riskR, coinRate, chainMult, coinsGained: 0, chainLeg: this.chainLeg, runId: this.runId,
       };
     }
     const C = Math.round(this.bagValue() * 10) / 10;
     const bonus = this.alert < SHARED.earlyEvacBonusBelowAlert ? Math.round(C * SHARED.earlyEvacBonusRate * 10) / 10 : 0;
     return {
       outcome: this.outcome, G, C, I: 0, bonus, final: Math.round((C + bonus) * 10) / 10,
-      rating: rateOf(C, this.config.ratingThresholdsWan), insuredItem: this.insuredItem(), topItem,
+      rating: rateOf(C, this.config.ratingThresholdsWan), insuredItem: this.insuredItem(), insuredItems: this.insuredItems(), topItem,
       opens: this.opens, items, hasRed: this.hasRed, seed: this.seed, reveals: this.reveals,
       warehouse: this.warehouse, config: this.config, alert: this.alert,
+      // M3 仓币：基数只认原始带出 C（不含早撤加成/广告加成），整仓向下取整一次
+      riskR, coinRate, chainMult, coinsGained: Math.floor(C * coinRate * chainMult), chainLeg: this.chainLeg, runId: this.runId,
     };
   }
 
@@ -738,6 +826,7 @@ class Run {
       bagValue: this.bagValue(), bagCount: this.bag.length, gross: this.gross,
       pending: this.pending?.name ?? null, seed: this.seed,
       config: this.config.id, warehouse: this.warehouse.id, nextCaughtProb: this.nextCaughtProb(),
+      riskR: 1 - this.surv, smoke: this.smoke, chainLeg: this.chainLeg, bagCapacity: this.bagCapacity, coinsPreview: this.phase === 'over' ? null : Math.floor(this.bagValue() * coinRateAt(1 - this.surv) * chainMultAt(this.chainLeg)),
     };
   }
 }
@@ -750,29 +839,61 @@ function rateOf(carried, th) {
 }
 
 /* ===== src/save.js ===== */
-// localStorage 存档 v2：纪录三分（最高成功带出 / 累计成功带出 / 累计保险保留，永不混）
+// localStorage 存档 v3：纪录三分（最高成功带出 / 累计成功带出 / 累计保险保留，永不混）
 // + M2 收藏层：图鉴 collection{itemId: 揭示次数}、成就 achievements[id]、战绩历史 history（最新在前，上限 30）
+// + M3 经济：仓币 coins、一次性体验券 vouchers（凭 vouchersGranted 只发一次）、产/耗币累计、runId 幂等
 
-const KEY = 'dajin_save_v2';
+const KEY = 'dajin_save_v3';
+const KEY_V2 = 'dajin_save_v2';
 const KEY_V1 = 'dajin_save_v1';
 const DEFAULTS = {
   bestCarried: 0, totalCarried: 0, totalInsurance: 0,
   runs: 0, evacs: 0, caughts: 0, redRuns: 0, configName: 'B', soundOn: true,
   collection: {}, achievements: [], history: [],
+  coins: 0, vouchers: { secret: 1, topsecret: 1 }, vouchersGranted: true,
+  coinsEarned: 0, coinsSpent: 0, setsRewarded: [], lastRunId: null,
 };
 
+const freshDefaults = () => JSON.parse(JSON.stringify(DEFAULTS)); // 深拷贝：防嵌套对象（vouchers/collection 等）与 DEFAULTS 共享引用被写穿
 function loadSave() {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
-    const old = localStorage.getItem(KEY_V1); // v1 → v2 自动迁移（纪录不丢）
-    if (old) {
-      const migrated = { ...DEFAULTS, ...JSON.parse(old) };
-      storeSave(migrated);
-      return migrated;
+    if (raw) return { ...freshDefaults(), ...JSON.parse(raw) };
+    for (const oldKey of [KEY_V2, KEY_V1]) { // v2/v1 → v3 自动迁移（纪录/收藏不丢，体验券随迁移首发一次）
+      const old = localStorage.getItem(oldKey);
+      if (old) {
+        const migrated = { ...freshDefaults(), ...JSON.parse(old) };
+        storeSave(migrated);
+        return migrated;
+      }
     }
   } catch { /* 解析失败降级新档 */ }
-  return { ...DEFAULTS };
+  return freshDefaults();
+}
+
+// ---- M3 经济出纳（入场费/道具购买；券优先，扣费只在开局提交时调用） ----
+function entryFeeOf(warehouseId) { return ECONOMY.entryFees[warehouseId] ?? 0; }
+function payEntry(save, warehouseId) {
+  const fee = entryFeeOf(warehouseId);
+  if (fee <= 0) return 'free';
+  if ((save.vouchers[warehouseId] ?? 0) > 0) { save.vouchers[warehouseId] -= 1; storeSave(save); return 'voucher'; }
+  if (save.coins >= fee) { save.coins -= fee; save.coinsSpent += fee; storeSave(save); return 'coins'; }
+  return null;
+}
+function refundEntry(save, warehouseId, method) {
+  if (method === 'voucher') save.vouchers[warehouseId] = (save.vouchers[warehouseId] ?? 0) + 1;
+  else if (method === 'coins') { const fee = entryFeeOf(warehouseId); save.coins += fee; save.coinsSpent -= fee; }
+  else return;
+  storeSave(save);
+}
+function buyShopItem(save, key) {
+  const price = ECONOMY.shop[key]?.price ?? 0;
+  if (save.coins < price) return false;
+  save.coins -= price; save.coinsSpent += price; storeSave(save); return true;
+}
+function refundShopItem(save, key) {
+  const price = ECONOMY.shop[key]?.price ?? 0;
+  save.coins += price; save.coinsSpent -= price; storeSave(save);
 }
 
 function storeSave(save) {
@@ -796,8 +917,10 @@ const ACHIEVEMENTS = [
 ];
 
 // 纪录口径：评级/最高纪录只认撤离局带出价值 C（不含加成）；保险保留单独入账
-// 返回 { save, unlocked }：unlocked 为本局新解锁成就（结算页展示用）
+// 返回 { save, unlocked, runCoins, bonusCoins }：仓币分列（本局折算 / 成就套装奖励）；同 runId 重复调用幂等跳过
 function recordResult(save, result) {
+  if (result.runId && save.lastRunId === result.runId) return { save, unlocked: [], runCoins: 0, bonusCoins: 0, dup: true };
+  if (result.runId) save.lastRunId = result.runId;
   save.runs += 1;
   if (result.hasRed) save.redRuns += 1;
   if (result.outcome === 'caught') {
@@ -842,8 +965,20 @@ function recordResult(save, result) {
   for (const a of ACHIEVEMENTS) {
     if (checks[a.id] && !save.achievements.includes(a.id)) { save.achievements.push(a.id); unlocked.push(a); }
   }
+  // M3 仓币入账：本局折算（仅撤离局，result.coinsGained 被抓恒 0）+ 一次性奖励（成就 20/项、套装集齐 100/套）
+  let runCoins = 0;
+  if (result.outcome !== 'caught') {
+    runCoins = result.coinsGained ?? 0;
+    save.coins += runCoins; save.coinsEarned += runCoins;
+  }
+  let bonusCoins = unlocked.length * ECONOMY.achievementCoin;
+  for (const st of SETS) {
+    const done = ITEMS.filter(i => i.setId === st.id).every(i => (save.collection[i.id] ?? 0) > 0);
+    if (done && !save.setsRewarded.includes(st.id)) { save.setsRewarded.push(st.id); bonusCoins += ECONOMY.setCoin; }
+  }
+  if (bonusCoins > 0) { save.coins += bonusCoins; save.coinsEarned += bonusCoins; }
   storeSave(save);
-  return { save, unlocked };
+  return { save, unlocked, runCoins, bonusCoins };
 }
 
 /* ===== src/ads.js ===== */
@@ -1000,6 +1135,9 @@ let run = null;
 let busy = false;
 let discardSel = new Set();
 let recorded = false;
+let lastCoins = { run: 0, bonus: 0 };
+let chainNextLeg = 1;   // M3 连锁：下一局的仓序（会话内有效，刷新即断链）
+let shopCtx = null;     // M3 局前商店上下文
 
 function show(screenId) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -1016,6 +1154,9 @@ function renderHome() {
   $('rec-runs').textContent = `${save.evacs} 撤 / ${save.caughts} 抓 · 共 ${save.runs} 局`;
   $('nav-coll-count').textContent = `(${Object.keys(save.collection).length}/${ITEMS.length})`;
   $('nav-ach-count').textContent = `(${save.achievements.length}/${ACHIEVEMENTS.length})`;
+  const v = save.vouchers ?? {};
+  const vtxt = ((v.secret ?? 0) + (v.topsecret ?? 0)) > 0 ? ` · 🎟 体验券 机密×${v.secret ?? 0} / 绝密×${v.topsecret ?? 0}` : '';
+  $('econ-line').innerHTML = `🪙 仓币 <b>${save.coins ?? 0}</b>${vtxt}`;
   document.querySelectorAll('#config-seg .seg-btn').forEach(b => b.classList.toggle('on', b.dataset.cfg === currentConfig));
 }
 document.querySelectorAll('#config-seg .seg-btn').forEach(b =>
@@ -1047,23 +1188,97 @@ renderHome(); show('screen-home'); });
 
 // ---------- 选仓 ----------
 function renderWarehouses() {
-  $('warehouse-list').innerHTML = WAREHOUSES.map((w, i) => `
-    <button class="wh-card" data-wh="${i}">
+  $('wh-hint').textContent = chainNextLeg > 1
+    ? `🔗 连锁进行中：下一仓是第 ${chainNextLeg} 仓（仓币倍率 ×${chainMultAt(chainNextLeg)}，每格警戒 +${chainNextLeg - 1}）· 🪙 仓币 ${save.coins}`
+    : `🪙 仓币 ${save.coins} · 撤离按本局承担的风险折算仓币；高仓收门票，有体验券先用券`;
+  $('warehouse-list').innerHTML = WAREHOUSES.map((w, i) => {
+    const fee = entryFeeOf(w.id);
+    const hasVoucher = (save.vouchers[w.id] ?? 0) > 0;
+    const poor = fee > 0 && !hasVoucher && save.coins < fee;
+    const feeTxt = fee <= 0 ? '入场免费' : hasVoucher ? `入场费 ${fee} 🪙（有体验券 🎟）` : `入场费 ${fee} 🪙`;
+    return `
+    <button class="wh-card ${poor ? 'poor' : ''}" data-wh="${i}">
       <span class="wh-name">${w.name}</span><span class="wh-tag">${w.tag}</span>
+      <span class="wh-fee">${feeTxt}${poor ? ' · 仓币不足' : ''}</span>
       <div class="wh-meta">警戒 <b>+${w.alertMin}~${w.alertMax}</b>/格 · 高品质倍率 <b>×${w.weightMult}</b><br>${w.hint}</div>
-    </button>`).join('');
+    </button>`;
+  }).join('');
   document.querySelectorAll('.wh-card').forEach(c =>
-    c.addEventListener('click', () => startRun(WAREHOUSES[Number(c.dataset.wh)])));
+    c.addEventListener('click', () => openShop(WAREHOUSES[Number(c.dataset.wh)])));
 }
 
+// ---------- M3 局前商店 ----------
+function shopFeeMethod(warehouse) {
+  const fee = entryFeeOf(warehouse.id);
+  if (fee <= 0) return { fee, method: 'free', cost: 0 };
+  if ((save.vouchers[warehouse.id] ?? 0) > 0) return { fee, method: 'voucher', cost: 0 };
+  return { fee, method: 'coins', cost: fee };
+}
+function shopSelectedCost() { let t = 0; for (const k of shopCtx?.items ?? []) t += ECONOMY.shop[k].price; return t; }
+function openShop(warehouse) {
+  shopCtx = { warehouse, items: new Set() };
+  $('shop-modal').classList.remove('hidden');
+  renderShop();
+}
+function renderShop() {
+  const { warehouse } = shopCtx;
+  const fm = shopFeeMethod(warehouse);
+  $('shop-title').textContent = `${warehouse.name} · 出发前准备`;
+  const rows = Object.entries(ECONOMY.shop).map(([key, it]) => {
+    const sel = shopCtx.items.has(key);
+    return `<button class="shop-row ${sel ? 'sel' : ''}" data-item="${key}"><span><span class="sr-name">${sel ? '☑' : '☐'} ${it.name}</span><span class="sr-desc">${it.desc}</span></span><b>${it.price} 🪙</b></button>`;
+  }).join('');
+  const feeTxt = fm.method === 'free' ? '入场免费' : fm.method === 'voucher' ? `入场费 ${fm.fee} 🪙 · 体验券抵扣 🎟` : `入场费 ${fm.fee} 🪙`;
+  const legTxt = chainNextLeg > 1 ? `<div class="shop-fee">🔗 连锁第 ${chainNextLeg} 仓：仓币倍率 ×${chainMultAt(chainNextLeg)} · 每格警戒 +${chainNextLeg - 1}</div>` : '';
+  $('shop-body').innerHTML = `<div class="shop-fee">${feeTxt} · 余额 ${save.coins} 🪙</div>${legTxt}${rows}<div class="shop-total">合计 ${shopSelectedCost() + fm.cost} 🪙</div>`;
+  document.querySelectorAll('.shop-row').forEach(r => r.addEventListener('click', () => {
+    const key = r.dataset.item;
+    shopCtx.items.has(key) ? shopCtx.items.delete(key) : shopCtx.items.add(key);
+    renderShop();
+  }));
+  const total = shopSelectedCost() + fm.cost;
+  $('btn-shop-go').disabled = total > save.coins;
+  $('shop-note').textContent = total > save.coins
+    ? '仓币不足：去掉一件道具，或先回普通仓攒币。'
+    : '入场费与道具开局后不退（被抓也不退）。仓币靠撤离折算：扛的风险越大，倍率越高。';
+}
+$('btn-shop-cancel').addEventListener('click', () => { $('shop-modal').classList.add('hidden'); shopCtx = null; });
+$('btn-shop-go').addEventListener('click', () => {
+  if (!shopCtx) return;
+  const { warehouse, items } = shopCtx;
+  const method = payEntry(save, warehouse.id); // Run 创建提交点：此刻才扣费/扣券
+  if (!method) { $('shop-note').textContent = '仓币不足，付不起入场费。'; return; }
+  const bought = [];
+  for (const key of items) {
+    if (!buyShopItem(save, key)) { // 预检已挡，防御性回滚
+      for (const b of bought) refundShopItem(save, b);
+      refundEntry(save, warehouse.id, method);
+      $('shop-note').textContent = '仓币不足，购买失败，已回滚。';
+      return;
+    }
+    bought.push(key);
+  }
+  $('shop-modal').classList.add('hidden');
+  shopCtx = null;
+  renderHome();
+  startRun(warehouse, {
+    extraCells: items.has('expand') ? ECONOMY.shop.expand.cells : 0,
+    dualInsurance: items.has('dualins'),
+    smokeBombs: items.has('smoke') ? 1 : 0,
+  });
+});
+
 // ---------- 开局与局内渲染 ----------
-function startRun(warehouse) {
+function startRun(warehouse, opts = {}) {
   const seed = SEED_PARAM ?? Math.floor(Math.random() * 90000000) + 10000000;
-  run = new Run({ config: CONFIGS[currentConfig], warehouse, seed });
+  const leg = chainNextLeg; chainNextLeg = 1;
+  run = new Run({ config: CONFIGS[currentConfig], warehouse, seed, chainLeg: leg, ...opts });
   recorded = false;
+  lastCoins = { run: 0, bonus: 0 };
   discardSel = new Set();
   $('run-seed').textContent = seed;
-  $('run-meta').textContent = `${warehouse.name} · ${CONFIGS[currentConfig].label}`;
+  $('run-meta').textContent = `${warehouse.name} · ${CONFIGS[currentConfig].label}${leg > 1 ? ` · 🔗 连锁第 ${leg} 仓` : ''}`;
+  $('bag-title').textContent = run.bagCapacity > 20 ? '背包（5×4 + 扩容2）' : '背包（5×4）';
   $('cells').innerHTML = Array.from({ length: SHARED.cellsPerWarehouse }, (_, i) =>
     `<button class="cell unopened" data-cell="${i}">📦<small>${i + 1} 号格</small></button>`).join('');
   document.querySelectorAll('.cell').forEach(c => c.addEventListener('click', () => onCell(Number(c.dataset.cell))));
@@ -1133,15 +1348,18 @@ function renderRun(prevValue) {
     const d = document.createElement('div');
     d.className = `bag-item t${it.tier}`;
     d.style.left = `${Math.min(...xs) / 5 * 100}%`;
-    d.style.top = `${Math.min(...ys) / 4 * 100}%`;
+    d.style.top = `${Math.min(...ys) / run.bagRows * 100}%`;
     d.style.width = `${(Math.max(...xs) - Math.min(...xs) + 1) / 5 * 100}%`;
-    d.style.height = `${(Math.max(...ys) - Math.min(...ys) + 1) / 4 * 100}%`;
-    d.innerHTML = `${it.icon}${it.uid === run.insuredUid ? '<span class="lock">🔒</span>' : ''}`;
+    d.style.height = `${(Math.max(...ys) - Math.min(...ys) + 1) / run.bagRows * 100}%`;
+    d.innerHTML = `${it.icon}${run.insuredUids.includes(it.uid) ? '<span class="lock">🔒</span>' : ''}`;
     d.title = `${it.name} · ${fmtWan(it.value)} 万`;
     bag.appendChild(d);
   }
   const used = run.bag.reduce((s, i) => s + i.size, 0);
-  $('bag-cells-info').textContent = `${used}/20 格`;
+  $('bag-cells-info').textContent = `${used}/${run.bagCapacity} 格`;
+  const sb = $('btn-smoke');
+  if (run.smoke > 0 && run.phase !== 'over') { sb.classList.remove('hidden'); sb.textContent = `💨 烟雾弹 · 警戒 −15（剩 ${run.smoke}）`; }
+  else sb.classList.add('hidden');
   const bonusHint = a < SHARED.earlyEvacBonusBelowAlert && run.bagValue() > 0 ? '（含早撤加成）' : '';
   $('btn-evac').textContent = `撤离 · 带走 ${fmtWan(run.bagValue())} 万${bonusHint}`;
 }
@@ -1249,7 +1467,7 @@ $('btn-discard-cancel').addEventListener('click', () => {
 });
 function renderDiscard() {
   $('discard-list').innerHTML = run.bag.map(i =>
-    `<button class="discard-chip ${discardSel.has(i.uid) ? 'sel' : ''}" data-uid="${i.uid}">${i.icon} ${i.name} · ${fmtWan(i.value)}万 · ${i.size}格${i.uid === run.insuredUid ? ' 🔒' : ''}</button>`).join('');
+    `<button class="discard-chip ${discardSel.has(i.uid) ? 'sel' : ''}" data-uid="${i.uid}">${i.icon} ${i.name} · ${fmtWan(i.value)}万 · ${i.size}格${run.insuredUids.includes(i.uid) ? ' 🔒' : ''}</button>`).join('');
   document.querySelectorAll('.discard-chip').forEach(ch => ch.addEventListener('click', () => {
     const uid = Number(ch.dataset.uid);
     discardSel.has(uid) ? discardSel.delete(uid) : discardSel.add(uid);
@@ -1291,6 +1509,10 @@ $('btn-evac').addEventListener('click', () => {
   const res = run.evacuate();
   if (res) finishToResult(res);
 });
+$('btn-smoke').addEventListener('click', () => {
+  if (busy || !run) return;
+  if (run.useSmoke()) { Sfx.click(); setEvent('💨 烟雾弹炸开，巡逻被呛得直揉眼睛——警戒 −15（已经担过的风险不退）。', false); renderRun(run.bagValue()); }
+});
 
 // ---------- 结算 ----------
 function finishToResult(result) {
@@ -1300,6 +1522,7 @@ function finishToResult(result) {
     const before = new Set(Object.keys(save.collection));
     const rr = recordResult(save, result);
     save = rr.save; unlocked = rr.unlocked; recorded = true;
+    lastCoins = { run: rr.runCoins ?? 0, bonus: rr.bonusCoins ?? 0 };
     newSeen = [...new Set((result.reveals ?? []).map(r => r.itemId))].filter(id => !before.has(id));
   }
   const body = $('result-body');
@@ -1312,8 +1535,10 @@ function finishToResult(result) {
         <div class="row"><span>搜获总值</span><b>${fmtWan(result.G)} 万</b></div>
         <div class="row"><span>被没收</span><b>-${fmtWan(result.G - result.I)} 万</b></div>
         <div class="row total"><span>保险格保留</span><b>${fmtWan(result.I)} 万</b></div>
+        <div class="row coin-row"><span>仓币</span><b>+0（被抓不发币）</b></div>
+        ${lastCoins.bonus > 0 ? `<div class="row coin-row"><span>成就 / 套装奖励</span><b>+${lastCoins.bonus} 🪙</b></div>` : ''}
       </div>
-      <p class="top-item">${ins ? `🔒 保险格保住了：${ins.icon} ${ins.name}（${TIER_NAMES[ins.tier]}）${fmtWan(ins.value)} 万` : '背包是空的，什么都没保住。'}</p>`;
+      <p class="top-item">${(result.insuredItems ?? []).length ? `🔒 保险保住了：${result.insuredItems.map(i => `${i.icon} ${i.name} ${fmtWan(i.value)} 万`).join('、')}` : '背包是空的，什么都没保住。'}</p>`;
   } else {
     body.innerHTML = `
       <div class="result-head win"><div class="big">${result.outcome === 'cleared' ? '整仓搬空' : '撤离成功'}</div></div>
@@ -1324,11 +1549,23 @@ function finishToResult(result) {
         <div class="row"><span>成功带出 C</span><b>${fmtWan(result.C)} 万</b></div>
         ${result.bonus > 0 ? `<div class="row"><span>早撤加成（警戒<40，+5%）</span><b>+${fmtWan(result.bonus)} 万</b></div>` : ''}
         <div class="row total"><span>最终到手</span><b>${fmtWan(result.final)} 万</b></div>
+        <div class="row coin-row"><span>仓币折算（风险 R ${result.riskR.toFixed(2)} · ×${result.coinRate}${result.chainMult > 1 ? ` · 连锁 ×${result.chainMult}` : ''}）</span><b>+${lastCoins.run} 🪙</b></div>
+        ${lastCoins.bonus > 0 ? `<div class="row coin-row"><span>成就 / 套装奖励</span><b>+${lastCoins.bonus} 🪙</b></div>` : ''}
       </div>
       <p class="top-item">${result.topItem ? `最贵单品：${result.topItem.icon} ${result.topItem.name}（${TIER_NAMES[result.topItem.tier]}）${fmtWan(result.topItem.value)} 万` : ''}${result.hasRed ? ' · 本局出过大金！' : ''}</p>`;
   }
   if (unlocked.length || newSeen.length) {
     body.innerHTML += `<div class="unlock-note">${newSeen.length ? `📖 新点亮图鉴 ${newSeen.length} 件` : ''}${unlocked.map(a => `<div>🏆 成就解锁：${a.name}——${a.desc}</div>`).join('')}</div>`;
+  }
+  // M3 连锁：撤离可继续下一仓（倍率递增封顶、每仓照付门票）；被抓断链，已落袋不受影响
+  const chainBtn = $('btn-chain');
+  if (result.outcome !== 'caught') {
+    chainBtn.classList.remove('hidden');
+    chainBtn.textContent = `🔗 继续下一仓（第 ${result.chainLeg + 1} 仓 · 仓币倍率 ×${chainMultAt(result.chainLeg + 1)}）`;
+    chainBtn.onclick = () => { chainNextLeg = result.chainLeg + 1; renderWarehouses(); show('screen-warehouse'); };
+  } else {
+    chainBtn.classList.add('hidden');
+    if (result.chainLeg >= 2) body.innerHTML += `<p class="top-item">🔗 连锁在第 ${result.chainLeg} 仓中断——已落袋的仓币和战绩都还在。</p>`;
   }
   renderHome();
   const manifest = drawShareCard($('share-canvas'), result);
@@ -1344,7 +1581,7 @@ $('btn-share').addEventListener('click', () => {
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   });
 });
-$('btn-again').addEventListener('click', () => startRun(run.warehouse));
+$('btn-again').addEventListener('click', () => { renderWarehouses(); show('screen-warehouse'); openShop(run.warehouse); }); // 再来一局同样走局前商店（门票/道具口径一致）
 $('btn-result-warehouse').addEventListener('click', () => { renderWarehouses(); show('screen-warehouse'); });
 $('btn-result-home').addEventListener('click', () => { // ---------- 音效开关 ----------
 function applySoundUI() {
