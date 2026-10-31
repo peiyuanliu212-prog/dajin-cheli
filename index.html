@@ -224,6 +224,7 @@ body.police { animation: police .16s steps(1) 6; }
       <button id="btn-nav-history" class="btn-ghost">📜 战绩</button>
     </div>
     <button id="btn-sound-home" class="btn-ghost sound-toggle">🔊 音效：开</button>
+    <button id="btn-desktop" class="btn-ghost hidden">📲 添加到桌面</button>
     <p class="fineprint">规则全透明：警戒每开一格 +5~9（按仓库），越深巡逻越密；下一格风险按档明示（安全/低危/中危/高危/极危/必抓），警戒越高被抓概率越大，被抓只剩保险格一件。</p>
   </section>
 
@@ -307,8 +308,10 @@ body.police { animation: police .16s steps(1) 6; }
     <canvas id="share-canvas" width="720" height="960"></canvas>
     <div class="modal-btns">
       <button id="btn-share" class="btn-ghost">保存战绩图</button>
+      <button id="btn-post" class="btn-ghost hidden">📣 发帖晒战绩</button>
       <button id="btn-again" class="btn-primary">再来一局</button>
     </div>
+    <p id="post-note" class="fineprint"></p>
     <div class="modal-btns">
       <button id="btn-result-warehouse" class="btn-ghost">换仓库</button>
       <button id="btn-result-home" class="btn-ghost">回首页</button>
@@ -841,6 +844,113 @@ function rateOf(carried, th) {
   return 'C';
 }
 
+/* ===== src/platform.js ===== */
+// 虎扑容器（ColorboxAI）平台能力接入——全部做特性检测：
+// 无容器（Pages/本地/其他浏览器）时静默降级，原有行为不变。
+// 接口口径以官方技能包文档为准（cloud-save / result-poster-posting / add-to-desktop / auth-get-user-info）。
+const CB = () => (typeof window !== 'undefined' ? window.ColorboxAI : undefined);
+
+function inContainer() { return !!CB(); }
+
+// ---------- 云存档：本地存档写穿镜像；本地为空时开机从云端恢复（换设备/清缓存不丢进度） ----------
+const CLOUD_KEY = 'dajin_save_v3';
+
+function mirrorCloudSave(save) {
+  const cb = CB();
+  if (!cb || typeof cb.cloudSave?.setValue !== 'function') return;
+  try {
+    const p = cb.cloudSave.setValue({ key: CLOUD_KEY, value: JSON.stringify(save) });
+    if (p && p.catch) p.catch(() => { /* 镜像失败不阻塞游戏，下次写入再同步 */ });
+  } catch { /* 同上 */ }
+}
+
+async function restoreCloudSaveIfLocalEmpty(local) {
+  const cb = CB();
+  if (!cb || typeof cb.cloudSave?.getValue !== 'function') return null;
+  if ((local.runs ?? 0) > 0 || (local.totalCarried ?? 0) > 0) return null; // 本地已有进度，绝不覆盖
+  try {
+    const res = await cb.cloudSave.getValue({ key: CLOUD_KEY });
+    if (res && res.code === 200 && res.data) {
+      const cloud = JSON.parse(res.data);
+      if (cloud && (cloud.runs ?? 0) > 0) return cloud;
+    }
+  } catch { /* 恢复失败按新档处理 */ }
+  return null;
+}
+
+// ---------- 结果海报发帖：Canvas Blob → OSS 上传 → 唤起发帖编辑器（预填标题/正文/图） ----------
+async function postResultPoster({ blob, title, content }) {
+  const cb = CB();
+  if (!cb || typeof cb.oss?.uploadFile !== 'function' || typeof cb.request?.bbs?.openPostEditor !== 'function') {
+    return { ok: false, message: '当前环境不支持发帖，请在虎扑 App 内使用' };
+  }
+  let up;
+  try { up = await cb.oss.uploadFile({ file: blob, filename: 'dajin-cheli-poster.png' }); }
+  catch (e) { return { ok: false, message: e?.message || '海报上传失败，请重试' }; }
+  const imageUrl = up?.downloadUrl;
+  if (!imageUrl) return { ok: false, message: up?.message || '海报上传失败，请重试' };
+  const params = { title, content, imageUrl };
+  try {
+    const bbs = cb.bbsConfig && await cb.bbsConfig.get();
+    if (bbs && typeof bbs.bbsTagId === 'string' && bbs.bbsTagId.trim() !== '') {
+      params.topicId = bbs.bbsTopicId;
+      params.tagId = bbs.bbsTagId;
+      params.topicName = bbs.bbsTopicName;
+      params.tagName = bbs.bbsTagName;
+    }
+  } catch { /* 话题配置读取失败则不带话题发帖 */ }
+  let res;
+  try { res = await cb.request.bbs.openPostEditor(params); }
+  catch (e) { return { ok: false, message: e?.message || '发帖编辑器打开失败' }; }
+  if (!res || res.code !== 200) return { ok: false, message: res?.message || '发帖编辑器打开失败' };
+  return { ok: true };
+}
+
+async function fetchNickname() {
+  const cb = CB();
+  if (!cb || typeof cb.auth?.getUserInfo !== 'function') return null;
+  try {
+    const r = await cb.auth.getUserInfo();
+    if (r && r.code === 200 && r.data && r.data.nickname) return r.data.nickname;
+  } catch { /* 取不到昵称就匿名发帖 */ }
+  return null;
+}
+
+// ---------- 添加到桌面（仅用户点击触发；结果语义按官方技能包口径） ----------
+function desktopAvailable() {
+  const cb = CB();
+  return !!cb && typeof cb.addToDesktop === 'function';
+}
+
+async function addToDesktop() {
+  const cb = CB();
+  if (!desktopAvailable()) return { state: 'unsupported', message: '请在虎扑 App 内使用' };
+  let res;
+  try { res = await cb.addToDesktop(); }
+  catch (e) { return { state: 'error', message: e?.message || '添加到桌面失败，请稍后重试' }; }
+  if (!res || res.code !== 200) return { state: 'error', message: res?.message || '添加到桌面失败，请稍后重试' };
+  const d = res.data || {};
+  if (d.alreadyAdded === true) return { state: 'already', message: '已添加过，请勿重复添加' };
+  const br = d.bridgeResult;
+  if (br && br.result === false) return { state: 'error', message: br.errorMsg || '添加到桌面失败，请稍后重试' };
+  if (br && br.result === true && d.platform === 'android') return { state: 'added', message: '已添加到桌面' };
+  return { state: 'silent', message: '' }; // 其他平台/回调为空：保持静默
+}
+
+// ---------- 全屏安全距：启动读一次宿主安全距离，给最外层容器加顶部避让 ----------
+function applySafeTop() {
+  try {
+    const cb = CB();
+    if (cb && typeof cb.getFullscreenSafeTop === 'function') {
+      const h = cb.getFullscreenSafeTop();
+      if (typeof h === 'number' && h > 0) {
+        const wrap = document.querySelector('#app') || document.querySelector('.wrap');
+        if (wrap) wrap.style.paddingTop = `${16 + h}px`;
+      }
+    }
+  } catch { /* 宿主外忽略 */ }
+}
+
 /* ===== src/save.js ===== */
 // localStorage 存档 v3：纪录三分（最高成功带出 / 累计成功带出 / 累计保险保留，永不混）
 // + M2 收藏层：图鉴 collection{itemId: 揭示次数}、成就 achievements[id]、战绩历史 history（最新在前，上限 30）
@@ -901,6 +1011,7 @@ function refundShopItem(save, key) {
 
 function storeSave(save) {
   try { localStorage.setItem(KEY, JSON.stringify(save)); } catch { /* 容器不支持时降级为内存态 */ }
+  mirrorCloudSave(save); // 虎扑容器内同步一份云存档（无容器时 platform 内部静默跳过）
 }
 
 const ACHIEVEMENTS = [
@@ -1217,10 +1328,24 @@ function toggleSound() { save.soundOn = !save.soundOn; storeSave(save); applySou
 $('btn-sound-home').addEventListener('click', toggleSound);
 $('btn-sound-run').addEventListener('click', toggleSound);
 applySoundUI();
+applySafeTop();
 
 renderHome();
-// 广告期间页面被容器重载 → 开机凭平台任务状态补发爽局（备给下趟出击，商店里会显示生效中）
-Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {}); }));
+// 平台恢复（虎扑容器内，异步不阻塞首屏）：
+// 1) 广告期间页面被重载 → 凭平台任务状态补发爽局；2) 本地空存档 → 从云存档恢复进度
+Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {});
+restoreCloudSaveIfLocalEmpty(save).then(restored => {
+  if (restored) { save = Object.assign(loadSave(), restored); storeSave(save); applySoundUI(); renderHome(); } // 云档压在默认档上合并，缺字段不炸
+}).catch(() => {});
+// 添加到桌面：仅容器内显示（用户点击才触发）
+if (desktopAvailable()) {
+  const dBtn = $('btn-desktop');
+  dBtn.classList.remove('hidden');
+  dBtn.addEventListener('click', async () => {
+    const r = await addToDesktop();
+    if (r.message) { dBtn.textContent = r.message; setTimeout(() => { dBtn.textContent = '📲 添加到桌面'; }, 2400); }
+  });
+} }));
 $('btn-start').addEventListener('click', () => { renderWarehouses(); show('screen-warehouse'); });
 $('btn-wh-back').addEventListener('click', () => { // ---------- 音效开关 ----------
 function applySoundUI() {
@@ -1232,10 +1357,24 @@ function toggleSound() { save.soundOn = !save.soundOn; storeSave(save); applySou
 $('btn-sound-home').addEventListener('click', toggleSound);
 $('btn-sound-run').addEventListener('click', toggleSound);
 applySoundUI();
+applySafeTop();
 
 renderHome();
-// 广告期间页面被容器重载 → 开机凭平台任务状态补发爽局（备给下趟出击，商店里会显示生效中）
-Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {}); show('screen-home'); });
+// 平台恢复（虎扑容器内，异步不阻塞首屏）：
+// 1) 广告期间页面被重载 → 凭平台任务状态补发爽局；2) 本地空存档 → 从云存档恢复进度
+Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {});
+restoreCloudSaveIfLocalEmpty(save).then(restored => {
+  if (restored) { save = Object.assign(loadSave(), restored); storeSave(save); applySoundUI(); renderHome(); } // 云档压在默认档上合并，缺字段不炸
+}).catch(() => {});
+// 添加到桌面：仅容器内显示（用户点击才触发）
+if (desktopAvailable()) {
+  const dBtn = $('btn-desktop');
+  dBtn.classList.remove('hidden');
+  dBtn.addEventListener('click', async () => {
+    const r = await addToDesktop();
+    if (r.message) { dBtn.textContent = r.message; setTimeout(() => { dBtn.textContent = '📲 添加到桌面'; }, 2400); }
+  });
+} show('screen-home'); });
 
 // ---------- 选仓 ----------
 function renderWarehouses() {
@@ -1640,10 +1779,41 @@ function finishToResult(result) {
     if (result.chainLeg >= 2) body.innerHTML += `<p class="top-item">🔗 连锁在第 ${result.chainLeg} 仓中断——已落袋的仓币和战绩都还在。</p>`;
   }
   renderHome();
+  $('btn-post').classList.toggle('hidden', !inContainer()); // 发帖晒战绩仅虎扑容器内可用
+  $('post-note').textContent = '';
   const manifest = drawShareCard($('share-canvas'), result);
   window.__DAJIN_LAST_CARD__ = manifest;
   show('screen-result');
 }
+let posting = false;
+$('btn-post').addEventListener('click', async () => {
+  if (posting || !run) return;
+  posting = true;
+  const btn = $('btn-post');
+  btn.disabled = true;
+  $('post-note').textContent = '正在生成海报并上传…';
+  try {
+    const result = run.buildResult();
+    const blob = await new Promise(r => $('share-canvas').toBlob(r, 'image/png'));
+    if (!blob) throw new Error('海报生成失败，请重试');
+    const nick = await fetchNickname();
+    const caught = result.outcome === 'caught';
+    const title = caught ? `大金撤离翻车了｜${result.warehouse.name}被抓，只保住 ${fmtWan(result.I)} 万` : `大金撤离｜${result.warehouse.name} ${result.rating} 级撤离，带出 ${fmtWan(result.C)} 万！`;
+    const lines = [
+      nick ? `@${nick} 的战绩单` : '我的战绩单',
+      caught ? `结果：被巡逻抓住，保险保留 ${fmtWan(result.I)} 万${result.topItem ? `（${result.topItem.name}）` : ''}，仓币 +0` : `结果：成功撤离，带出 ${fmtWan(result.C)} 万，评级 ${result.rating}${result.topItem ? `，最贵 ${result.topItem.name}` : ''}，仓币 +${result.coinsGained}`,
+      result.boosted ? '本局是广告爽局（出货率拉满）' : '纯 B 正赛局',
+      result.chainLeg > 1 ? `连锁第 ${result.chainLeg} 仓` : '',
+      '逐格开箱，见好就收还是再贪一格？来《大金撤离：仓库寻宝王》试试手气。',
+    ].filter(Boolean);
+    const r = await postResultPoster({ blob, title, content: lines.join('\n') });
+    $('post-note').textContent = r.ok ? '发帖编辑器已打开，改两句就能发啦' : r.message;
+  } catch (e) {
+    $('post-note').textContent = e?.message || '发帖失败，请重试';
+  }
+  posting = false;
+  btn.disabled = false;
+});
 $('btn-share').addEventListener('click', () => {
   $('share-canvas').toBlob(blob => {
     const a = document.createElement('a');
@@ -1665,10 +1835,24 @@ function toggleSound() { save.soundOn = !save.soundOn; storeSave(save); applySou
 $('btn-sound-home').addEventListener('click', toggleSound);
 $('btn-sound-run').addEventListener('click', toggleSound);
 applySoundUI();
+applySafeTop();
 
 renderHome();
-// 广告期间页面被容器重载 → 开机凭平台任务状态补发爽局（备给下趟出击，商店里会显示生效中）
-Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {}); show('screen-home'); });
+// 平台恢复（虎扑容器内，异步不阻塞首屏）：
+// 1) 广告期间页面被重载 → 凭平台任务状态补发爽局；2) 本地空存档 → 从云存档恢复进度
+Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {});
+restoreCloudSaveIfLocalEmpty(save).then(restored => {
+  if (restored) { save = Object.assign(loadSave(), restored); storeSave(save); applySoundUI(); renderHome(); } // 云档压在默认档上合并，缺字段不炸
+}).catch(() => {});
+// 添加到桌面：仅容器内显示（用户点击才触发）
+if (desktopAvailable()) {
+  const dBtn = $('btn-desktop');
+  dBtn.classList.remove('hidden');
+  dBtn.addEventListener('click', async () => {
+    const r = await addToDesktop();
+    if (r.message) { dBtn.textContent = r.message; setTimeout(() => { dBtn.textContent = '📲 添加到桌面'; }, 2400); }
+  });
+} show('screen-home'); });
 
 // ---------- M2：图鉴 / 成就 / 战绩 ----------
 function collCell(item) {
@@ -1726,10 +1910,24 @@ function toggleSound() { save.soundOn = !save.soundOn; storeSave(save); applySou
 $('btn-sound-home').addEventListener('click', toggleSound);
 $('btn-sound-run').addEventListener('click', toggleSound);
 applySoundUI();
+applySafeTop();
 
 renderHome();
-// 广告期间页面被容器重载 → 开机凭平台任务状态补发爽局（备给下趟出击，商店里会显示生效中）
+// 平台恢复（虎扑容器内，异步不阻塞首屏）：
+// 1) 广告期间页面被重载 → 凭平台任务状态补发爽局；2) 本地空存档 → 从云存档恢复进度
 Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {});
+restoreCloudSaveIfLocalEmpty(save).then(restored => {
+  if (restored) { save = Object.assign(loadSave(), restored); storeSave(save); applySoundUI(); renderHome(); } // 云档压在默认档上合并，缺字段不炸
+}).catch(() => {});
+// 添加到桌面：仅容器内显示（用户点击才触发）
+if (desktopAvailable()) {
+  const dBtn = $('btn-desktop');
+  dBtn.classList.remove('hidden');
+  dBtn.addEventListener('click', async () => {
+    const r = await addToDesktop();
+    if (r.message) { dBtn.textContent = r.message; setTimeout(() => { dBtn.textContent = '📲 添加到桌面'; }, 2400); }
+  });
+}
 
 </script>
 </body>
