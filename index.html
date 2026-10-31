@@ -191,6 +191,10 @@ body.police { animation: police .16s steps(1) 6; }
 .shop-total { text-align: right; font-weight: 700; padding: 4px 2px; }
 .coin-row b { color: var(--gold, #d4a017); }
 
+.mode-line { font-size: 15px; margin: 2px 0; }
+.mode-line small { display: block; opacity: .7; font-size: 12px; margin-top: 2px; }
+.shop-row.boost { border-color: rgba(212,160,23,.55); }
+
 </style>
 </head>
 <body>
@@ -210,11 +214,8 @@ body.police { animation: police .16s steps(1) 6; }
     </div>
     <div class="econ-line card" id="econ-line"></div>
     <div class="config-switch">
-      <span class="cs-label">概率配置</span>
-      <div class="seg" id="config-seg">
-        <button data-cfg="B" class="seg-btn">B 稀有<small>大金稀有 · 默认</small></button>
-        <button data-cfg="A" class="seg-btn">A 爽局<small>出货率高 · 活动</small></button>
-      </div>
+      <span class="cs-label">模式</span>
+      <p class="mode-line">B 稀有 · 正赛<small>开局前看广告，可把本趟出击升级「爽局」（出货率大涨）；最佳纪录只认纯 B 局</small></p>
     </div>
     <button id="btn-start" class="btn-primary">开始寻宝</button>
     <div class="home-nav">
@@ -382,7 +383,7 @@ function catchProbAt(alert) {
 const TIER_NAMES = ['粗货', '良品', '稀有', '史诗', '传说', '大金'];
 const TIER_KEYS = ['white', 'green', 'blue', 'purple', 'gold', 'red'];
 
-// A/B 两套概率配置（试玩期可切换，默认 B）
+// 概率配置（ADR-026 定版）：B 为唯一基准模式（正赛）；A 不再是可选模式，而是「广告爽局」的内部概率表（看激励广告后本趟生效）
 const CONFIGS = {
   A: {
     id: 'A', label: 'A 爽局', desc: '出货率高，爽感直接',
@@ -642,7 +643,8 @@ function genItem(streams, config, warehouse, opens) {
 // 规则口径：GAME_RULES（R1 时序、R2 保险标记、R3 摆放/重排、丢弃 +5/件；被抓判定为概率坡道，ADR-021）
 
 class Run {
-  constructor({ config, warehouse, seed, extraCells = 0, dualInsurance = false, smokeBombs = 0, chainLeg = 1, runId = null }) {
+  constructor({ config, warehouse, seed, extraCells = 0, dualInsurance = false, smokeBombs = 0, chainLeg = 1, runId = null, boosted = false }) {
+    this.boosted = boosted; // 广告爽局（ADR-026）：config 已是生效概率表（爽局=A），此标记供纪录口径与展示
     this.config = config;
     this.warehouse = warehouse;
     this.seed = seed;
@@ -805,7 +807,7 @@ class Run {
         final: I, rating: null, insuredItem: insItems[0] ?? null, insuredItems: insItems, topItem,
         opens: this.opens, items, hasRed: this.hasRed, seed: this.seed, reveals: this.reveals,
         warehouse: this.warehouse, config: this.config, alert: this.alert,
-        riskR, coinRate, chainMult, coinsGained: 0, chainLeg: this.chainLeg, runId: this.runId,
+        riskR, coinRate, chainMult, coinsGained: 0, chainLeg: this.chainLeg, runId: this.runId, boosted: this.boosted,
       };
     }
     const C = Math.round(this.bagValue() * 10) / 10;
@@ -816,7 +818,7 @@ class Run {
       opens: this.opens, items, hasRed: this.hasRed, seed: this.seed, reveals: this.reveals,
       warehouse: this.warehouse, config: this.config, alert: this.alert,
       // M3 仓币：基数只认原始带出 C（不含早撤加成/广告加成），整仓向下取整一次
-      riskR, coinRate, chainMult, coinsGained: Math.floor(C * coinRate * chainMult), chainLeg: this.chainLeg, runId: this.runId,
+      riskR, coinRate, chainMult, coinsGained: Math.floor(C * coinRate * chainMult), chainLeg: this.chainLeg, runId: this.runId, boosted: this.boosted,
     };
   }
 
@@ -826,7 +828,7 @@ class Run {
       bagValue: this.bagValue(), bagCount: this.bag.length, gross: this.gross,
       pending: this.pending?.name ?? null, seed: this.seed,
       config: this.config.id, warehouse: this.warehouse.id, nextCaughtProb: this.nextCaughtProb(),
-      riskR: 1 - this.surv, smoke: this.smoke, chainLeg: this.chainLeg, bagCapacity: this.bagCapacity, coinsPreview: this.phase === 'over' ? null : Math.floor(this.bagValue() * coinRateAt(1 - this.surv) * chainMultAt(this.chainLeg)),
+      riskR: 1 - this.surv, smoke: this.smoke, chainLeg: this.chainLeg, bagCapacity: this.bagCapacity, boosted: this.boosted, coinsPreview: this.phase === 'over' ? null : Math.floor(this.bagValue() * coinRateAt(1 - this.surv) * chainMultAt(this.chainLeg)),
     };
   }
 }
@@ -929,9 +931,10 @@ function recordResult(save, result) {
   } else {
     save.evacs += 1;
     save.totalCarried += result.C;
-    if (result.C > save.bestCarried) save.bestCarried = result.C;
+    // ADR-026：最佳纪录（荣誉）只认纯 B 局；广告爽局照常计累计/仓币/图鉴，但不上最佳榜
+    if (!result.boosted && result.C > save.bestCarried) save.bestCarried = result.C;
   }
-  save.configName = result.config.id;
+  if (!result.boosted) save.configName = result.config.id;
   // 图鉴：揭示即点亮并累计次数（被抓/丢弃过的也算摸到过）
   for (const r of result.reveals ?? []) save.collection[r.itemId] = (save.collection[r.itemId] ?? 0) + 1;
   // 战绩历史
@@ -939,7 +942,7 @@ function recordResult(save, result) {
     t: Date.now(), outcome: result.outcome,
     value: result.outcome === 'caught' ? result.I : result.C,
     rating: result.rating, warehouse: result.warehouse.id, config: result.config.id,
-    opens: result.opens, hasRed: result.hasRed,
+    opens: result.opens, hasRed: result.hasRed, boosted: !!result.boosted,
   });
   save.history = save.history.slice(0, 30);
   // 成就判定（基于入账后的累计状态 + 本局结果）
@@ -985,6 +988,10 @@ function recordResult(save, result) {
 // 激励广告点位接口（一期全部 no-op 占位，五期接虎扑激励视频）
 // 红线：广告加成 A 永远独立记账，不进带出价值 C / 评级 / 纪录 / 分享卡主数字（ADR-007）
 const Ads = {
+  // 爽局升级（ADR-026）：本趟出击（本局＋连锁后续仓）出货率升 A 配置；每趟限 1 次。
+  // 红线例外说明：爽局只换概率表，不直接给价值——仓币照常按实带出折算，最佳纪录不认爽局（save 层把关）。
+  // 五期接虎扑激励视频；当前为 Pages 占位：模拟完播后 granted（UI 明示「模拟广告」）。
+  async boostRun() { return { granted: true, simulated: true }; },
   // 撤离结算 +30%（每局限 1 次，五期）
   async settlementBonus() { return { granted: false, rate: 0.3 }; },
   // 被抓挽回：保住第二贵的 1 件（每局限 1 次，五期）
@@ -1130,7 +1137,7 @@ const REVEAL_MS = [550, 700, 900, 1200, 1600, 2100]; // 揭示节奏放慢（ADR
 const $ = id => document.getElementById(id);
 
 let save = loadSave();
-let currentConfig = CONFIGS[save.configName] ? save.configName : 'B';
+let currentConfig = 'B'; // ADR-026：B 为唯一基准模式；A 仅作广告爽局的内部概率表，不再手动可选
 let run = null;
 let busy = false;
 let discardSel = new Set();
@@ -1138,6 +1145,7 @@ let recorded = false;
 let lastCoins = { run: 0, bonus: 0 };
 let chainNextLeg = 1;   // M3 连锁：下一局的仓序（会话内有效，刷新即断链）
 let shopCtx = null;     // M3 局前商店上下文
+let boostChain = false; // 广告爽局（ADR-026）：本趟出击是否已激活爽局（连锁整趟有效，被抓/新出击重置）
 
 function show(screenId) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -1220,9 +1228,14 @@ function openShop(warehouse) {
   $('shop-modal').classList.remove('hidden');
   renderShop();
 }
+function boostActiveHere() { return !!(shopCtx?.boostWatched || (chainNextLeg > 1 && boostChain)); }
 function renderShop() {
   const { warehouse } = shopCtx;
   const fm = shopFeeMethod(warehouse);
+  const boostOn = boostActiveHere();
+  const boostRow = boostOn
+    ? `<div class="shop-row sel boost"><span><span class="sr-name">📺 爽局生效中</span><span class="sr-desc">本趟出击出货率已升级（出红概率翻倍），连锁不断就一直有效</span></span><b>✓</b></div>`
+    : `<button class="shop-row boost" data-boost="1"><span><span class="sr-name">📺 看广告 · 本趟升级爽局</span><span class="sr-desc">出货率大涨（出红概率 1.5%→3%），连锁整趟有效；最佳纪录不认爽局</span></span><b>免费</b></button>`;
   $('shop-title').textContent = `${warehouse.name} · 出发前准备`;
   const rows = Object.entries(ECONOMY.shop).map(([key, it]) => {
     const sel = shopCtx.items.has(key);
@@ -1230,7 +1243,16 @@ function renderShop() {
   }).join('');
   const feeTxt = fm.method === 'free' ? '入场免费' : fm.method === 'voucher' ? `入场费 ${fm.fee} 🪙 · 体验券抵扣 🎟` : `入场费 ${fm.fee} 🪙`;
   const legTxt = chainNextLeg > 1 ? `<div class="shop-fee">🔗 连锁第 ${chainNextLeg} 仓：仓币倍率 ×${chainMultAt(chainNextLeg)} · 每格警戒 +${chainNextLeg - 1}</div>` : '';
-  $('shop-body').innerHTML = `<div class="shop-fee">${feeTxt} · 余额 ${save.coins} 🪙</div>${legTxt}${rows}<div class="shop-total">合计 ${shopSelectedCost() + fm.cost} 🪙</div>`;
+  $('shop-body').innerHTML = `<div class="shop-fee">${feeTxt} · 余额 ${save.coins} 🪙</div>${legTxt}${boostRow}${rows}<div class="shop-total">合计 ${shopSelectedCost() + fm.cost} 🪙</div>`;
+  const boostBtn = document.querySelector('[data-boost]');
+  if (boostBtn) boostBtn.addEventListener('click', async () => {
+    boostBtn.disabled = true;
+    $('shop-note').textContent = '广告播放中…（试玩版为模拟广告，虎扑版接真激励视频）';
+    const r = await Ads.boostRun();
+    if (!FAST) await delay(900);
+    if (r.granted) { shopCtx.boostWatched = true; renderShop(); $('shop-note').textContent = '爽局已激活：本趟出击出货率升级！'; }
+    else { boostBtn.disabled = false; $('shop-note').textContent = '广告未看完，爽局未生效。'; }
+  });
   document.querySelectorAll('.shop-row').forEach(r => r.addEventListener('click', () => {
     const key = r.dataset.item;
     shopCtx.items.has(key) ? shopCtx.items.delete(key) : shopCtx.items.add(key);
@@ -1258,6 +1280,7 @@ $('btn-shop-go').addEventListener('click', () => {
     }
     bought.push(key);
   }
+  const boostNow = boostActiveHere();
   $('shop-modal').classList.add('hidden');
   shopCtx = null;
   renderHome();
@@ -1265,19 +1288,24 @@ $('btn-shop-go').addEventListener('click', () => {
     extraCells: items.has('expand') ? ECONOMY.shop.expand.cells : 0,
     dualInsurance: items.has('dualins'),
     smokeBombs: items.has('smoke') ? 1 : 0,
+    boostNow,
   });
 });
 
 // ---------- 开局与局内渲染 ----------
 function startRun(warehouse, opts = {}) {
+  const { boostNow = false, ...runOpts } = opts;
   const seed = SEED_PARAM ?? Math.floor(Math.random() * 90000000) + 10000000;
   const leg = chainNextLeg; chainNextLeg = 1;
-  run = new Run({ config: CONFIGS[currentConfig], warehouse, seed, chainLeg: leg, ...opts });
+  if (leg === 1) boostChain = boostNow;              // 新出击：以本趟商店激活为准
+  else if (boostNow) boostChain = true;              // 连锁中途补看广告，整趟生效
+  const boosted = leg === 1 ? boostNow : boostChain;
+  run = new Run({ config: boosted ? CONFIGS.A : CONFIGS.B, warehouse, seed, chainLeg: leg, boosted, ...runOpts });
   recorded = false;
   lastCoins = { run: 0, bonus: 0 };
   discardSel = new Set();
   $('run-seed').textContent = seed;
-  $('run-meta').textContent = `${warehouse.name} · ${CONFIGS[currentConfig].label}${leg > 1 ? ` · 🔗 连锁第 ${leg} 仓` : ''}`;
+  $('run-meta').textContent = `${warehouse.name} · ${run.boosted ? '📺 爽局（出货率↑）' : 'B 稀有'}${leg > 1 ? ` · 🔗 连锁第 ${leg} 仓` : ''}`;
   $('bag-title').textContent = run.bagCapacity > 20 ? '背包（5×4 + 扩容2）' : '背包（5×4）';
   $('cells').innerHTML = Array.from({ length: SHARED.cellsPerWarehouse }, (_, i) =>
     `<button class="cell unopened" data-cell="${i}">📦<small>${i + 1} 号格</small></button>`).join('');
@@ -1530,7 +1558,7 @@ function finishToResult(result) {
     const ins = result.insuredItem;
     body.innerHTML = `
       <div class="result-head lose"><div class="big">被 抓 了</div></div>
-      <p class="result-sub">${result.warehouse.name} · ${result.config.label} · 开了 ${result.opens} 格，终局警戒 ${result.alert}</p>
+      <p class="result-sub">${result.warehouse.name} · ${result.boosted ? '📺广告爽局' : result.config.label} · 开了 ${result.opens} 格，终局警戒 ${result.alert}</p>
       <div class="card ledger">
         <div class="row"><span>搜获总值</span><b>${fmtWan(result.G)} 万</b></div>
         <div class="row"><span>被没收</span><b>-${fmtWan(result.G - result.I)} 万</b></div>
@@ -1542,7 +1570,7 @@ function finishToResult(result) {
   } else {
     body.innerHTML = `
       <div class="result-head win"><div class="big">${result.outcome === 'cleared' ? '整仓搬空' : '撤离成功'}</div></div>
-      <p class="result-sub">${result.warehouse.name} · ${result.config.label} · 开了 ${result.opens} 格 · 警戒 ${result.alert}</p>
+      <p class="result-sub">${result.warehouse.name} · ${result.boosted ? '📺广告爽局' : result.config.label} · 开了 ${result.opens} 格 · 警戒 ${result.alert}</p>
       <div style="text-align:center"><span class="stamp">${result.rating}</span></div>
       <div class="card ledger">
         <div class="row"><span>搜获总值 G</span><b>${fmtWan(result.G)} 万</b></div>
@@ -1565,6 +1593,7 @@ function finishToResult(result) {
     chainBtn.onclick = () => { chainNextLeg = result.chainLeg + 1; renderWarehouses(); show('screen-warehouse'); };
   } else {
     chainBtn.classList.add('hidden');
+    boostChain = false; // 被抓即出击结束，爽局激活随之清零
     if (result.chainLeg >= 2) body.innerHTML += `<p class="top-item">🔗 连锁在第 ${result.chainLeg} 仓中断——已落袋的仓币和战绩都还在。</p>`;
   }
   renderHome();
@@ -1631,7 +1660,7 @@ function renderHistory() {
     const d = new Date(h.t);
     const when = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     const label = h.outcome === 'caught' ? '被抓' : h.outcome === 'cleared' ? '搬空' : '撤离';
-    return `<div class="hist-row ${h.outcome === 'caught' ? 'caught' : ''}"><span>${label} · ${whName(h.warehouse)} <span class="h-meta">${when} · 开 ${h.opens} 格${h.hasRed ? ' · 出大金' : ''}${h.rating ? ` · ${h.rating} 级` : ''}</span></span><span class="h-val">${fmtWan(h.value)} 万</span></div>`;
+    return `<div class="hist-row ${h.outcome === 'caught' ? 'caught' : ''}"><span>${label} · ${whName(h.warehouse)} <span class="h-meta">${when} · 开 ${h.opens} 格${h.hasRed ? ' · 出大金' : ''}${h.rating ? ` · ${h.rating} 级` : ''}${h.boosted ? ' · 📺爽局' : ''}</span></span><span class="h-val">${fmtWan(h.value)} 万</span></div>`;
   }).join('');
 }
 $('btn-nav-collection').addEventListener('click', () => { renderCollection(); show('screen-collection'); });
