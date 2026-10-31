@@ -6,6 +6,7 @@
 <title>大金撤离：再贪一格</title>
 <style>
 :root {
+  --safe-top: 0px; /* 全屏容器顶部安全距，由 applySafeTop() 在容器内写入实际值（ADR-033） */
   --bg: #10130e;
   --panel: #1b2016;
   --panel-2: #232a1c;
@@ -26,7 +27,7 @@
 }
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 body { background: var(--bg); color: var(--text); font-family: "PingFang SC", "Microsoft YaHei", sans-serif; }
-#app { max-width: 480px; margin: 0 auto; padding: 16px 14px 40px; min-height: 100vh; }
+#app { max-width: 480px; margin: 0 auto; padding: calc(16px + var(--safe-top)) 14px 40px; min-height: 100vh; }
 .screen { display: none; }
 .screen.active { display: block; }
 .hidden { display: none !important; }
@@ -98,7 +99,7 @@ body { background: var(--bg); color: var(--text); font-family: "PingFang SC", "M
 .evac { margin-top: 2px; }
 .seed-line { color: var(--muted); font-size: 12px; text-align: center; margin-top: 10px; }
 
-.modal { position: fixed; inset: 0; background: rgba(5,6,4,.78); display: flex; align-items: center; justify-content: center; z-index: 30; padding: 18px; }
+.modal { position: fixed; inset: 0; background: rgba(5,6,4,.78); display: flex; align-items: center; justify-content: center; z-index: 30; padding: calc(18px + var(--safe-top)) 18px 18px; }
 .modal-card { background: var(--panel); border: 1px solid var(--hazard); border-radius: 14px; padding: 20px; width: 100%; max-width: 420px; max-height: 86vh; overflow-y: auto; }
 .modal-card h3 { letter-spacing: 3px; margin-bottom: 12px; }
 .pending-item { border: 1.5px solid; border-radius: 10px; padding: 12px; text-align: center; font-size: 17px; margin-bottom: 12px; }
@@ -996,15 +997,18 @@ async function addToDesktop() {
   return { state: 'silent', message: '' }; // 其他平台/回调为空：保持静默
 }
 
-// ---------- 全屏安全距：启动读一次宿主安全距离，给最外层容器加顶部避让 ----------
+// ---------- 全屏顶部安全适配（colorbox-fullscreen-safe-top 规范，ADR-033） ----------
+// 规范口径：初始化后调用 getFullscreenSafeTop()（同步、无参、CSS px、取不到为 0），
+// 同一内容只避让一次。本实现把安全距写入全局 CSS 变量 --safe-top，
+// 由 #app 与两个 fixed 弹窗各自的 padding-top 引用一次 —— 变量赋值幂等，
+// 多个时机重复调用不会叠加留白；本地/宿主外变量保持 0，显示不变。
 function applySafeTop() {
   try {
     const cb = CB();
     if (cb && typeof cb.getFullscreenSafeTop === 'function') {
       const h = cb.getFullscreenSafeTop();
       if (typeof h === 'number' && h > 0) {
-        const wrap = document.querySelector('#app') || document.querySelector('.wrap');
-        if (wrap) wrap.style.paddingTop = `${16 + h}px`;
+        document.documentElement.style.setProperty('--safe-top', `${h}px`);
       }
     }
   } catch { /* 宿主外忽略 */ }
