@@ -218,6 +218,7 @@ body.police { animation: police .16s steps(1) 6; }
       <p class="mode-line">B 稀有 · 正赛<small>开局前看广告，可把本趟出击升级「爽局」（出货率大涨）；最佳纪录只认纯 B 局</small></p>
     </div>
     <button id="btn-start" class="btn-primary">开始寻宝</button>
+    <button id="btn-continue" class="btn-ghost hidden" style="width:100%;margin-top:10px">▶ 继续上局（未结束）</button>
     <div class="home-nav">
       <button id="btn-nav-collection" class="btn-ghost">📖 图鉴 <span id="nav-coll-count"></span></button>
       <button id="btn-nav-ach" class="btn-ghost">🏆 成就 <span id="nav-ach-count"></span></button>
@@ -684,6 +685,8 @@ class Run {
     this.phase = 'playing';  // playing | pending | over
     this.outcome = null;     // evac | cleared | caught
     this.uidSeq = 1;         // 局内计数器：同种子整局逐位可复现（含 uid）
+    this.actionLog = [];     // 玩家动作日志（局内重载恢复用：确定性回放重建整局）
+    this.cellItems = {};     // 格号 → 揭示过的物品（恢复时重绘已开格用；被抓格不揭示故不记录）
     this.startedAt = Date.now();
   }
 
@@ -702,6 +705,7 @@ class Run {
   // M3 烟雾弹：只降当前警戒，surv（已累计风险 R）不回滚
   useSmoke() {
     if (this.phase === 'over' || this.smoke <= 0) return false;
+    this.actionLog.push(['smoke']);
     this.smoke -= 1;
     this.alert = Math.max(0, this.alert - ECONOMY.shop.smoke.alertCut);
     return true;
@@ -729,6 +733,7 @@ class Run {
 
   openCell(idx) {
     if (this.phase !== 'playing' || this.cellsOpened[idx]) return { type: 'ignored' };
+    this.actionLog.push(['open', idx]);
     // R1-②③：先抽增量并累加（深层区另有固定加成，计入 inc 一并展示）
     const { alertMin, alertMax } = this.warehouse;
     const depthBonus = SHARED.depthAlertBonus[Math.min(2, Math.floor(this.opens / 5))];
@@ -740,6 +745,7 @@ class Run {
     this.cellsOpened[idx] = true;
     this.opens++;
     const item = genItem(this.streams, this.config, this.warehouse, this.opens - 1);
+    this.cellItems[idx] = item;
     this.reveals.push({ itemId: item.itemId, name: item.name, tier: item.tier });
     this.gross += item.value;
     if (item.tier === 5) this.hasRed = true;
@@ -763,6 +769,7 @@ class Run {
     if (this.phase !== 'pending' || !this.pending) return { placed: false };
     const drop = this.bag.filter(i => uids.includes(i.uid));
     if (!drop.length) return { placed: false };
+    this.actionLog.push(['discard', [...uids]]);
     for (const d of drop) freeCells(this.grid, d.cells);
     this.bag = this.bag.filter(i => !uids.includes(i.uid));
     this.discards += drop.length;
@@ -775,12 +782,14 @@ class Run {
 
   abandonPending() {
     if (this.phase !== 'pending') return;
+    this.actionLog.push(['abandon']);
     this.pending = null;
     this.phase = 'playing';
   }
 
   evacuate() {
     if (this.phase === 'over') return null;
+    this.actionLog.push(['evac']);
     return this.finishRun(this.opens >= SHARED.cellsPerWarehouse ? 'cleared' : 'evac');
   }
 
@@ -842,6 +851,21 @@ function rateOf(carried, th) {
   if (carried >= th.A) return 'A';
   if (carried >= th.B) return 'B';
   return 'C';
+}
+
+// 局内恢复：同构造参数 + 动作日志回放，逐位重建中断前的 Run（引擎确定性保证，ADR-017 口径）
+// 回放后 phase 为 over 说明该局其实已结算（检查点未及清除），调用方应丢弃检查点
+function restoreRun(ctorOpts, actions) {
+  const run = new Run(ctorOpts);
+  for (const [kind, arg] of actions) {
+    if (kind === 'open') run.openCell(arg);
+    else if (kind === 'discard') run.discard(arg);
+    else if (kind === 'abandon') run.abandonPending();
+    else if (kind === 'smoke') run.useSmoke();
+    else if (kind === 'evac') run.evacuate();
+    if (run.phase === 'over') break;
+  }
+  return run;
 }
 
 /* ===== src/platform.js ===== */
@@ -1160,7 +1184,7 @@ function fmtWan(v) {
   return (Math.round(v * 10) / 10).toString();
 }
 
-function drawShareCard(canvas, result) {
+function drawShareCard(canvas, result, opts = {}) {
   canvas.width = 720; canvas.height = 960;
   const ctx = canvas.getContext('2d');
   const caught = result.outcome === 'caught';
@@ -1189,6 +1213,7 @@ function drawShareCard(canvas, result) {
   put('大 金 撤 离', 360, 108, 'bold 54px sans-serif', '#e8e6da', 'center');
   put('仓库寻宝王 · 战绩单', 360, 152, '24px sans-serif', '#9aa48c', 'center');
   put(`${result.warehouse.name} · ${result.config.label}`, 360, 196, '26px sans-serif', '#e8e6da', 'center');
+  if (opts.nickname) put(`@${opts.nickname}`, 360, 234, '22px sans-serif', '#9aa48c', 'center');
 
   if (caught) {
     put('被 抓 了', 360, 300, 'bold 64px sans-serif', '#e5484d', 'center');
@@ -1296,6 +1321,32 @@ let chainNextLeg = 1;   // M3 连锁：下一局的仓序（会话内有效，�
 let shopCtx = null;     // M3 局前商店上下文
 let boostChain = false; // 广告爽局（ADR-026）：本趟出击是否已激活爽局（连锁整趟有效，被抓/新出击重置）
 let boostCredit = false; // 广告期间页面被容器重载、开机核对补发的爽局额度（供下趟出击，消费一次）
+// ---------- 局内检查点：容器重载/杀进程后可恢复未结束的局（《乱世拼将》两版教训：容器真会重载页面） ----------
+const RUN_CKPT_KEY = 'dajin_run_ckpt_v1';
+function saveRunCheckpoint() {
+  if (!run) return;
+  if (run.phase === 'over') { clearRunCheckpoint(); return; }
+  const ck = {
+    v: 1, ts: Date.now(), boostChain,
+    ctor: {
+      configId: run.config.id, warehouseId: run.warehouse.id, seed: run.seed,
+      extraCells: run.bagCapacity - SHARED.backpackCols * SHARED.backpackRows,
+      dualInsurance: run.insuranceCount >= 2,
+      smokeBombs: run.smoke + run.actionLog.filter(a => a[0] === 'smoke').length,
+      chainLeg: run.chainLeg, runId: run.runId, boosted: run.boosted,
+    },
+    actions: run.actionLog,
+  };
+  try { localStorage.setItem(RUN_CKPT_KEY, JSON.stringify(ck)); } catch { /* 存不下就放弃恢复能力，不阻塞游戏 */ }
+}
+function clearRunCheckpoint() { try { localStorage.removeItem(RUN_CKPT_KEY); } catch { /* ignore */ } }
+function readRunCheckpoint() {
+  try {
+    const ck = JSON.parse(localStorage.getItem(RUN_CKPT_KEY));
+    if (ck && ck.v === 1 && Date.now() - ck.ts < 24 * 3600 * 1000 && Array.isArray(ck.actions)) return ck;
+  } catch { /* 损坏检查点按无处理 */ }
+  return null;
+}
 
 function show(screenId) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -1306,6 +1357,7 @@ const delay = ms => FAST ? Promise.resolve() : new Promise(r => setTimeout(r, ms
 
 // ---------- 首页 ----------
 function renderHome() {
+  $('btn-continue').classList.toggle('hidden', !readRunCheckpoint());
   $('rec-best').textContent = `${fmtWan(save.bestCarried)} 万`;
   $('rec-total').textContent = `${fmtWan(save.totalCarried)} 万`;
   $('rec-ins').textContent = `${fmtWan(save.totalInsurance)} 万`;
@@ -1331,9 +1383,11 @@ applySoundUI();
 applySafeTop();
 
 renderHome();
+let playerNick = null; // 虎扑昵称（容器内拉取，海报与发帖用；取不到为 null）
 // 平台恢复（虎扑容器内，异步不阻塞首屏）：
 // 1) 广告期间页面被重载 → 凭平台任务状态补发爽局；2) 本地空存档 → 从云存档恢复进度
 Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {});
+fetchNickname().then(n => { if (n) playerNick = n; }).catch(() => {});
 restoreCloudSaveIfLocalEmpty(save).then(restored => {
   if (restored) { save = Object.assign(loadSave(), restored); storeSave(save); applySoundUI(); renderHome(); } // 云档压在默认档上合并，缺字段不炸
 }).catch(() => {});
@@ -1347,6 +1401,22 @@ if (desktopAvailable()) {
   });
 } }));
 $('btn-start').addEventListener('click', () => { renderWarehouses(); show('screen-warehouse'); });
+$('btn-continue').addEventListener('click', () => {
+  const ck = readRunCheckpoint();
+  if (!ck) { renderHome(); return; }
+  try {
+    const warehouse = WAREHOUSES.find(w => w.id === ck.ctor.warehouseId);
+    const restored = restoreRun({ config: CONFIGS[ck.ctor.configId], warehouse, seed: ck.ctor.seed, extraCells: ck.ctor.extraCells, dualInsurance: ck.ctor.dualInsurance, smokeBombs: ck.ctor.smokeBombs, chainLeg: ck.ctor.chainLeg, runId: ck.ctor.runId, boosted: ck.ctor.boosted }, ck.actions);
+    if (restored.phase === 'over') { clearRunCheckpoint(); renderHome(); return; } // 该局其实已结算，检查点过期
+    run = restored;
+    boostChain = !!ck.boostChain;
+    chainNextLeg = 1;
+    setupRunScreen(warehouse);
+    $('run-meta').textContent += ' · 已恢复';
+    setEvent('已恢复中断的局，进度分毫不差。继续搜，或者见好就收。', false);
+    if (run.phase === 'pending') openPending();
+  } catch { clearRunCheckpoint(); renderHome(); }
+});
 $('btn-wh-back').addEventListener('click', () => { // ---------- 音效开关 ----------
 function applySoundUI() {
   setSoundEnabled(save.soundOn);
@@ -1360,9 +1430,11 @@ applySoundUI();
 applySafeTop();
 
 renderHome();
+let playerNick = null; // 虎扑昵称（容器内拉取，海报与发帖用；取不到为 null）
 // 平台恢复（虎扑容器内，异步不阻塞首屏）：
 // 1) 广告期间页面被重载 → 凭平台任务状态补发爽局；2) 本地空存档 → 从云存档恢复进度
 Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {});
+fetchNickname().then(n => { if (n) playerNick = n; }).catch(() => {});
 restoreCloudSaveIfLocalEmpty(save).then(restored => {
   if (restored) { save = Object.assign(loadSave(), restored); storeSave(save); applySoundUI(); renderHome(); } // 云档压在默认档上合并，缺字段不炸
 }).catch(() => {});
@@ -1483,20 +1555,27 @@ function startRun(warehouse, opts = {}) {
   else if (boostNow) boostChain = true;              // 连锁中途补看广告，整趟生效
   const boosted = boostChain;
   run = new Run({ config: boosted ? CONFIGS.A : CONFIGS.B, warehouse, seed, chainLeg: leg, boosted, ...runOpts });
+  setupRunScreen(warehouse);
+  setEvent('点任意一格开始搜。越往深处，好货越多。', false);
+}
+// 局内界面初始化（新局与重载恢复共用）：重置局内会话态、重建格子并渲染
+function setupRunScreen(warehouse) {
   recorded = false;
   lastCoins = { run: 0, bonus: 0 };
   discardSel = new Set();
-  $('run-seed').textContent = seed;
-  $('run-meta').textContent = `${warehouse.name} · ${run.boosted ? '📺 爽局（出货率↑）' : 'B 稀有'}${leg > 1 ? ` · 🔗 连锁第 ${leg} 仓` : ''}`;
+  $('run-seed').textContent = run.seed;
+  $('run-meta').textContent = `${warehouse.name} · ${run.boosted ? '📺 爽局（出货率↑）' : 'B 稀有'}${run.chainLeg > 1 ? ` · 🔗 连锁第 ${run.chainLeg} 仓` : ''}`;
   $('bag-title').textContent = run.bagCapacity > 20 ? '背包（5×4 + 扩容2）' : '背包（5×4）';
   $('cells').innerHTML = Array.from({ length: SHARED.cellsPerWarehouse }, (_, i) =>
     `<button class="cell unopened" data-cell="${i}">📦<small>${i + 1} 号格</small></button>`).join('');
   document.querySelectorAll('.cell').forEach(c => c.addEventListener('click', () => onCell(Number(c.dataset.cell))));
+  for (let i = 0; i < SHARED.cellsPerWarehouse; i++) { // 恢复时重绘已开格（新局无已开格，天然跳过）
+    if (run.cellsOpened[i] && run.cellItems[i]) renderCellOpened(i, run.cellItems[i]);
+  }
   $('pending-modal').classList.add('hidden');
   // 警戒条刻度：风险线 = 从该警戒起，最大增量可达坡道起点（ADR-021/022）；必抓线在条外（>=115），隐藏
   $('tick-gamble').style.left = `${SHARED.catchRamp[0][0] - warehouse.alertMax}%`;
   $('tick-certain').style.display = 'none';
-  setEvent('点任意一格开始搜。越往深处，好货越多。', false);
   renderRun(0);
   show('screen-run');
 }
@@ -1509,6 +1588,7 @@ function setEvent(text, bad) {
 
 let displayedValue = 0;
 function renderRun(prevValue) {
+  saveRunCheckpoint(); // 局内每次渲染落检查点（phase=over 时自动清除）
   // 估值跳字
   const target = Math.round(run.bagValue() * 10) / 10;
   if (FAST || prevValue === target) { displayedValue = target; $('hud-value').textContent = `${fmtWan(target)} 万`; }
@@ -1778,10 +1858,12 @@ function finishToResult(result) {
     boostChain = false; // 被抓即出击结束，爽局激活随之清零
     if (result.chainLeg >= 2) body.innerHTML += `<p class="top-item">🔗 连锁在第 ${result.chainLeg} 仓中断——已落袋的仓币和战绩都还在。</p>`;
   }
+  clearRunCheckpoint();
   renderHome();
   $('btn-post').classList.toggle('hidden', !inContainer()); // 发帖晒战绩仅虎扑容器内可用
+  $('btn-share').classList.toggle('hidden', inContainer()); // 容器内以发帖代替图片下载（平台规范路径）
   $('post-note').textContent = '';
-  const manifest = drawShareCard($('share-canvas'), result);
+  const manifest = drawShareCard($('share-canvas'), result, { nickname: playerNick });
   window.__DAJIN_LAST_CARD__ = manifest;
   show('screen-result');
 }
@@ -1796,7 +1878,7 @@ $('btn-post').addEventListener('click', async () => {
     const result = run.buildResult();
     const blob = await new Promise(r => $('share-canvas').toBlob(r, 'image/png'));
     if (!blob) throw new Error('海报生成失败，请重试');
-    const nick = await fetchNickname();
+    const nick = playerNick || await fetchNickname();
     const caught = result.outcome === 'caught';
     const title = caught ? `大金撤离翻车了｜${result.warehouse.name}被抓，只保住 ${fmtWan(result.I)} 万` : `大金撤离｜${result.warehouse.name} ${result.rating} 级撤离，带出 ${fmtWan(result.C)} 万！`;
     const lines = [
@@ -1838,9 +1920,11 @@ applySoundUI();
 applySafeTop();
 
 renderHome();
+let playerNick = null; // 虎扑昵称（容器内拉取，海报与发帖用；取不到为 null）
 // 平台恢复（虎扑容器内，异步不阻塞首屏）：
 // 1) 广告期间页面被重载 → 凭平台任务状态补发爽局；2) 本地空存档 → 从云存档恢复进度
 Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {});
+fetchNickname().then(n => { if (n) playerNick = n; }).catch(() => {});
 restoreCloudSaveIfLocalEmpty(save).then(restored => {
   if (restored) { save = Object.assign(loadSave(), restored); storeSave(save); applySoundUI(); renderHome(); } // 云档压在默认档上合并，缺字段不炸
 }).catch(() => {});
@@ -1913,9 +1997,11 @@ applySoundUI();
 applySafeTop();
 
 renderHome();
+let playerNick = null; // 虎扑昵称（容器内拉取，海报与发帖用；取不到为 null）
 // 平台恢复（虎扑容器内，异步不阻塞首屏）：
 // 1) 广告期间页面被重载 → 凭平台任务状态补发爽局；2) 本地空存档 → 从云存档恢复进度
 Ads.recoverPendingBoost().then(ok => { if (ok) boostCredit = true; }).catch(() => {});
+fetchNickname().then(n => { if (n) playerNick = n; }).catch(() => {});
 restoreCloudSaveIfLocalEmpty(save).then(restored => {
   if (restored) { save = Object.assign(loadSave(), restored); storeSave(save); applySoundUI(); renderHome(); } // 云档压在默认档上合并，缺字段不炸
 }).catch(() => {});
