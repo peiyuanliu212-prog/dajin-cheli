@@ -310,6 +310,9 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
 @keyframes ultraGlow { from { box-shadow: 0 0 6px rgba(126,231,255,.45); } to { box-shadow: 0 0 18px rgba(126,231,255,.95), 0 0 30px rgba(255,215,0,.35); } }
 .cell.opened.t6 { border-color: #7ee7ff; box-shadow: 0 0 14px rgba(126,231,255,.55); }
 
+.cabinet-tags { color: #ffd24d; font-size: 13px; font-weight: 700; margin-top: 4px; }
+.cab-grid { grid-template-columns: repeat(6, 1fr); }
+
 </style>
 </head>
 <body>
@@ -1396,8 +1399,10 @@ const ACHIEVEMENTS = [
   { id: 'set_1', name: '成套了', desc: '集齐任意一个套装' },
   { id: 'cab_first', name: '初次上展', desc: '第一次把物品摆进展览柜' },
   { id: 'cab_duo', name: '双璧同辉', desc: '展柜同时摆着两件金档及以上' },
-  { id: 'cab_value', name: '身价不菲', desc: '展柜总身价达到 300 万' },
-  { id: 'stash_60', name: '满仓满谷', desc: '仓库持仓达到 60 件' },
+  { id: 'cab_value_300', name: '小有身价', desc: '展柜可售身价达到 300 万（纪念品不计）' },
+  { id: 'cab_value', name: '身价不菲', desc: '展柜可售身价达到 800 万且至少 3 件可售展品' },
+  { id: 'stash_60', name: '满仓满谷', desc: '仓库可售持仓达到 60 件（纪念品不计）' },
+  { id: 'memorial_5', name: '抢救专家', desc: '累计抢救纪念达到 5 件' },
 ];
 
 // 纪录口径：评级/最高纪录只认带出局带出价值 C（不含加成）；防震保留单独入账
@@ -1455,10 +1460,7 @@ function recordResult(save, result) {
     coll_20: lit >= Math.ceil(ITEMS.length / 2),
     coll_40: lit >= ITEMS.length,
     set_1: setDone,
-    cab_first: (save.cabinet ?? []).length >= 1,
-    cab_duo: cabinetHighTierCount(save) >= 2,
-    cab_value: cabinetValue(save) >= 300,
-    stash_60: (save.stash ?? []).length >= 60,
+    ...cabinetChecks(save),
   };
   const unlocked = [];
   for (const a of ACHIEVEMENTS) {
@@ -1496,14 +1498,27 @@ function sellStash(save, filter = { all: true }) {
     if (filter.tier != null) return (ITEMS.find(i => i.id === e.id)?.tier ?? -1) === filter.tier;
     return true;
   });
-  if (picked.length === 0) return { coins: 0, count: 0 };
-  let coins = Math.floor(picked.reduce((sum, e) => sum + e.stamp, 0));
-  if (save.sellBonusArmed) { coins = Math.floor(coins * (1 + (ECONOMY.ads?.sellBonusRate ?? 0.25))); save.sellBonusArmed = false; }
+  if (picked.length === 0) return { coins: 0, count: 0, bonusApplied: false };
+  // ADR-045 防叠加（GPT 第 7 轮 Q1）：领过结算 +50% 的同批戳价（bonusClaimed）不再享出售 +25%；
+  // 合并后仍只取整一次；整批都是已领加成的货时，武装不消耗、留给下一批。
+  const claimedSum = picked.filter(e => e.bonusClaimed).reduce((sum, e) => sum + e.stamp, 0);
+  const freeSum = picked.reduce((sum, e) => sum + e.stamp, 0) - claimedSum;
+  let bonusApplied = false;
+  let total = claimedSum + freeSum;
+  if (save.sellBonusArmed && freeSum > 0) { total = claimedSum + freeSum * (1 + (ECONOMY.ads?.sellBonusRate ?? 0.25)); save.sellBonusArmed = false; bonusApplied = true; }
+  const coins = Math.floor(total);
   const pickedUids = new Set(picked.map(e => e.uid));
   save.stash = save.stash.filter(e => !pickedUids.has(e.uid));
   save.coins += coins; save.coinsEarned += coins;
   storeSave(save);
-  return { coins, count: picked.length };
+  return { coins, count: picked.length, bonusApplied };
+}
+// 结算 +50% 广告到账时调用：把该局入仓件标为已领加成（出售加成不再叠加，ADR-045）
+function markRunBonusClaimed(save, runId) {
+  if (!runId) return;
+  let changed = false;
+  for (const e of save.stash ?? []) if (e.runId === runId && !e.bonusClaimed) { e.bonusClaimed = true; changed = true; }
+  if (changed) storeSave(save);
 }
 // 免费丢弃（纪念品可丢）；在展件须先撤展。返回是否删掉。
 function discardStash(save, uid) {
@@ -1517,6 +1532,20 @@ function discardStash(save, uid) {
 
 // ---- v1.1 展览柜 ----
 function cabinetEntries(save) { return (save.cabinet ?? []).map(uid => save.stash.find(e => e.uid === uid)).filter(Boolean); }
+function cabinetSellableEntries(save) { return cabinetEntries(save).filter(e => !e.memorial); }
+function cabinetSellableValue(save) { return Math.round(cabinetSellableEntries(save).reduce((sum, e) => sum + e.value, 0) * 10) / 10; }
+function cabinetMemorialValue(save) { return Math.round(cabinetEntries(save).filter(e => e.memorial).reduce((sum, e) => sum + e.value, 0) * 10) / 10; }
+// 仓库/展柜类成就的共享判定（结算与摆展两路共用，防口径分叉）
+function cabinetChecks(save) {
+  return {
+    cab_first: (save.cabinet ?? []).length >= 1,
+    cab_duo: cabinetHighTierCount(save) >= 2,
+    cab_value_300: cabinetSellableValue(save) >= 300,
+    cab_value: cabinetSellableValue(save) >= 800 && cabinetSellableEntries(save).length >= 3,
+    stash_60: (save.stash ?? []).filter(e => !e.memorial).length >= 60,
+    memorial_5: (save.stash ?? []).filter(e => e.memorial).length >= 5,
+  };
+}
 function cabinetValue(save) { return Math.round(cabinetEntries(save).reduce((sum, e) => sum + e.value, 0) * 10) / 10; }
 function cabinetHighTierCount(save) { return cabinetEntries(save).filter(e => (ITEMS.find(i => i.id === e.id)?.tier ?? 0) >= 4).length; }
 function displayInCabinet(save, uid) {
@@ -1531,12 +1560,7 @@ function removeFromCabinet(save, uid) {
 }
 // 仓库/展柜类成就复评（摆展、撤展、出售后调用）：新解锁的给 20 币并返回清单
 function evaluateStashAchievements(save) {
-  const checks = {
-    cab_first: (save.cabinet ?? []).length >= 1,
-    cab_duo: cabinetHighTierCount(save) >= 2,
-    cab_value: cabinetValue(save) >= 300,
-    stash_60: (save.stash ?? []).length >= 60,
-  };
+  const checks = cabinetChecks(save);
   const unlocked = [];
   for (const a of ACHIEVEMENTS) {
     if (checks[a.id] && !save.achievements.includes(a.id)) {
@@ -1685,7 +1709,7 @@ function drawShareCard(canvas, result, opts = {}) {
   y += 52;
   put(new Date().toLocaleDateString('zh-CN'), 80, y, '22px sans-serif', '#9aa48c');
   put(`种子 ${result.seed}`, 640, y, '22px sans-serif', '#9aa48c', 'right');
-  if (opts.cabinetValue > 0) { y += 44; put(`🖼 展柜身价 ${fmtWan(opts.cabinetValue)} 万`, 360, y, '24px sans-serif', '#f5b921', 'center'); }
+  if (opts.cabinetValue > 0) { y += 44; put(`🖼 展柜身价 ${fmtWan(opts.cabinetValue)} 万${opts.cabinetTag ? ` · ${opts.cabinetTag}` : ''}`, 360, y, '24px sans-serif', '#f5b921', 'center'); }
 
   put(caught ? '塌成这样，也是一种战绩' : '见好就收，还是再贪一格？', 360, 886, '26px sans-serif', '#e8e6da', 'center');
 
@@ -1935,7 +1959,7 @@ function handleAdRecovery() {
       if (save.lastSupplyDay !== todayStr()) { save.lastSupplyDay = todayStr(); creditCoins(ECONOMY.ads.supplyCoins); $('supply-note').textContent = `📺 广告补给已补发 +${ECONOMY.ads.supplyCoins} 🪙`; }
       else storeSave(save);
     } else if (rec.type === 'coin') {
-      if (rec.runId && save.lastAdCoinRunId !== rec.runId && rec.amount > 0) { save.lastAdCoinRunId = rec.runId; creditCoins(rec.amount); $('supply-note').textContent = `📺 广告仓币加成已补发 +${rec.amount} 🪙`; }
+      if (rec.runId && save.lastAdCoinRunId !== rec.runId && rec.amount > 0) { save.lastAdCoinRunId = rec.runId; creditCoins(rec.amount); markRunBonusClaimed(save, rec.runId); $('supply-note').textContent = `📺 广告仓币加成已补发 +${rec.amount} 🪙`; }
       else storeSave(save);
     } else if (rec.type === 'intel') {
       if (rec.itemId && save.lastIntelDay !== todayStr()) {
@@ -2714,7 +2738,7 @@ function finishToResult(result) {
 // 海报按需绘制：延后绘制未完成时，分享/发帖入口先同步补画（ADR-042）
 function ensureShareCard() {
   if (window.__DAJIN_LAST_CARD__ || !lastResultRef) return;
-  window.__DAJIN_LAST_CARD__ = drawShareCard($('share-canvas'), lastResultRef, { nickname: playerNick, cabinetValue: cabinetValue(save) });
+  window.__DAJIN_LAST_CARD__ = drawShareCard($('share-canvas'), lastResultRef, { nickname: playerNick, cabinetValue: cabinetValue(save), cabinetTag: cabinetTags()[0] ?? null });
 }
 // 广告救援候选：背包里最贵的未防震件品（ADR-032）
 function rescueCandidate(result) {
@@ -2774,7 +2798,7 @@ $('btn-coinbonus').addEventListener('click', async () => {
   if (r.simulated && !FAST) await delay(900);
   btn.disabled = false;
   if (!r.granted) { $('ad-note').textContent = r.message || '广告未看完，加成未生效。'; return; }
-  if (save.lastAdCoinRunId !== result.runId) { save.lastAdCoinRunId = result.runId; creditCoins(amount); }
+  if (save.lastAdCoinRunId !== result.runId) { save.lastAdCoinRunId = result.runId; creditCoins(amount); markRunBonusClaimed(save, result.runId); }
   result.coinBonusApplied = amount;
   finishToResult(result);
   $('ad-note').textContent = `仓币加成到账 +${amount} 🪙${r.simulated ? '（试玩版模拟广告）' : ''}`;
@@ -2951,7 +2975,7 @@ function renderStash(note = '') {
     row.style.borderLeftColor = TIER_COLORS[item.tier];
     const main = mk('div', 'st-main');
     const nameLine = mk('div', 'st-name', `${item.name}`);
-    if (e.memorial) nameLine.append(mk('span', 'memorial-badge', '纪念品'));
+    if (e.memorial) nameLine.append(mk('span', 'memorial-badge', '抢救纪念'));
     if (inCab) nameLine.append(mk('span', 'cabinet-badge', '展柜中'));
     main.append(nameLine);
     const meta = mk('div', 'st-meta');
@@ -2990,30 +3014,65 @@ function renderStash(note = '') {
   }
   renderCabinet();
 }
-// 展览柜：展位网格（已解锁 = cabinetSlots，9/10 号位看广告永久解锁）
+// 馆藏标签（ADR-045，GPT 第 7 轮 Q4）：按在展构成自动生成，最多取 2 个展示、海报带第 1 个
+function cabinetTags() {
+  const es = cabinetEntries(save);
+  if (!es.length) return [];
+  const tags = [];
+  if (es.some(e => itemOf(e.id)?.tier === 6)) tags.push('💎 瑰宝收藏家');
+  if (new Set(es.filter(e => itemOf(e.id)?.tier === 5).map(e => e.id)).size >= 4) tags.push('🔴 大金全收集');
+  for (const st of SETS) {
+    const mem = ITEMS.filter(i => i.setId === st.id);
+    if (mem.length && mem.every(m => es.some(e => e.id === m.id))) { tags.push(`🏺 ${st.name}专馆`); break; }
+  }
+  if (es.some(e => e.value >= 300)) tags.push('👑 镇馆之宝');
+  if (es.length >= 8) tags.push('🏛 满馆陈列');
+  return tags.slice(0, 2);
+}
+function cabinetNpcLine() {
+  const es = cabinetEntries(save);
+  if (!es.length) return '在下方列表点「上展」，把得意之作摆出来。';
+  if (es.some(e => itemOf(e.id)?.tier === 6)) return '参观者咂咂嘴：「这件镇馆的，够换半条街了。」';
+  if (es.some(e => e.memorial)) return '参观者小声说：「那件抢救回来的，比买来的更动人。」';
+  if (es.length >= 5) return '参观者点头：「这馆子，有点东西。」';
+  return '参观者探头：「刚开张？慢慢攒，攒满才好看。」';
+}
+// 展览柜：12 位网格（8 基础 + 9/10 广告解锁 + 11/12 仓币买断 600/1000）
+const CABINET_COIN_PRICES = { 11: 600, 12: 1000 };
 function renderCabinet() {
   const box = $('cabinet-box');
   if (!box) return;
   box.replaceChildren();
   const wrap = mk('div', 'cabinet-box');
   const head = mk('div', 'cabinet-head');
-  head.append(mk('span', null, `🖼 展览柜${save.achievements.includes('coll_40') ? ' · 👑 大收藏家' : ''}`), mk('span', 'cab-value', `总身价 ${fmtWan(cabinetValue(save))} 万`));
+  const memVal = cabinetMemorialValue(save);
+  head.append(mk('span', null, `🖼 展览柜${save.achievements.includes('coll_40') ? ' · 👑 大收藏家' : ''}`), mk('span', 'cab-value', `总身价 ${fmtWan(cabinetValue(save))} 万${memVal > 0 ? `（含纪念 ${fmtWan(memVal)} 万）` : ''}`));
   wrap.append(head);
-  wrap.append(mk('div', 'cabinet-hint', '在展件锁定不可出售；点已摆展位可撤下。好货和纪念品都值得摆出来。'));
+  const tags = cabinetTags();
+  if (tags.length) wrap.append(mk('div', 'cabinet-tags', tags.join(' · ')));
+  wrap.append(mk('div', 'cabinet-hint', '在展件锁定不可出售；点已摆展位可撤下。'));
+  wrap.append(mk('div', 'cabinet-hint', cabinetNpcLine()));
   const grid = mk('div', 'cab-grid');
-  const total = 10;
-  for (let i = 0; i < total; i++) {
+  for (let i = 0; i < 12; i++) {
     if (i >= (save.cabinetSlots ?? 8)) {
+      const slotNo = i + 1;
+      const coinPrice = CABINET_COIN_PRICES[slotNo];
       const lock = mk('button', 'cab-slot locked');
-      lock.append(mk('span', 'cab-icon', '🔒'), mk('span', null, '看广告解锁'));
+      lock.append(mk('span', 'cab-icon', '🔒'), mk('span', null, coinPrice ? `${coinPrice} 🪙 解锁` : '看广告解锁'));
       lock.addEventListener('click', async () => {
+        if (coinPrice) {
+          if (save.coins < coinPrice) { $('stash-note').textContent = `仓币不足：第 ${slotNo} 号展位要 ${coinPrice} 🪙，先去卖点货攒攒。`; return; }
+          save.coins -= coinPrice; save.coinsSpent += coinPrice; save.cabinetSlots = (save.cabinetSlots ?? 8) + 1; storeSave(save);
+          renderStash(`第 ${slotNo} 号展位已买断解锁（-${coinPrice} 🪙）`);
+          return;
+        }
         lock.disabled = true;
-        const r = await Ads.watch('cabinetslot', { slot: i + 1 });
+        const r = await Ads.watch('cabinetslot', { slot: slotNo });
         if (r.simulated && !FAST) await delay(900);
         lock.disabled = false;
         if (!r.granted) { $('stash-note').textContent = r.message || '广告未看完，展位未解锁。'; return; }
         if ((save.cabinetSlots ?? 8) < 10) { save.cabinetSlots = (save.cabinetSlots ?? 8) + 1; storeSave(save); }
-        renderStash(`第 ${i + 1} 号展位已永久解锁${r.simulated ? '（试玩版模拟广告）' : ''}`);
+        renderStash(`第 ${slotNo} 号展位已永久解锁${r.simulated ? '（试玩版模拟广告）' : ''}`);
       });
       grid.append(lock);
       continue;
@@ -3025,7 +3084,7 @@ function renderCabinet() {
       const slot = mk('button', 'cab-slot filled');
       slot.style.borderColor = TIER_COLORS[item?.tier ?? 0];
       slot.append(mk('span', 'cab-icon', item?.icon ?? '❔'), mk('span', null, `${fmtWan(entry.value)} 万`));
-      slot.title = `${item?.name ?? ''}（点按撤下）`;
+      slot.title = `${item?.name ?? ''}${entry.memorial ? '（抢救纪念）' : ''}（点按撤下）`;
       slot.addEventListener('click', () => { removeFromCabinet(save, uid); renderStash(`「${item?.name ?? '展品'}」已撤下回仓库`); });
       grid.append(slot);
     } else {
