@@ -404,9 +404,9 @@ const TIER_KEYS = ['white', 'green', 'blue', 'purple', 'gold', 'red'];
 const CONFIGS = {
   A: {
     id: 'A', label: 'A 爽局', desc: '出货率高，爽感直接',
-    tierWeights: { 0: 0.25, 1: 0.28, 2: 0.22, 3: 0.12, 4: 0.08, 5: 0.05 },
+    tierWeights: { 0: 0.21, 1: 0.25, 2: 0.23, 3: 0.13, 4: 0.10, 5: 0.08 },
     // 评级线按仓分线（ADR-027 定版）：各仓带出分位 p92/p75/p50，S≈8%/仓
-    ratingThresholdsWan: { normal: { S: 310, A: 205, B: 130 }, secret: { S: 360, A: 245, B: 170 }, topsecret: { S: 410, A: 305, B: 210 } },
+    ratingThresholdsWan: { normal: { S: 360, A: 245, B: 175 }, secret: { S: 420, A: 320, B: 215 }, topsecret: { S: 490, A: 370, B: 265 } },
   },
   B: {
     id: 'B', label: 'B 稀有', desc: '大金稀有，晒图有面',
@@ -448,7 +448,7 @@ function depthNameAt(opens) {
 // M3 经济系统（设计案 v0.2 冻结，ADR-025）：仓币折算/入场费/道具/连锁
 const ECONOMY = {
   rateBands: [[0.05, 0.2], [0.25, 0.5], [0.55, 1.0], [Infinity, 1.5]], // 对未取整 R 查表
-  entryFees: { normal: 0, secret: 20, topsecret: 50 },
+  entryFees: { normal: 0, secret: 25, topsecret: 60 },
   shop: {
     smoke: { price: 30, name: '减震垫', desc: '局内使用：震动 −15，每局 1 个', alertCut: 15 },
     expand: { price: 40, name: '扩容贴', desc: '本局背包 +2 格（20→22）', cells: 2 },
@@ -1592,12 +1592,12 @@ function renderShop() {
   {
     const wrap = mk('span');
     if (boostOn) {
-      wrap.append(mk('span', 'sr-name', '📺 爽局生效中'), mk('span', 'sr-desc', '本趟出击出货率已升级（出红概率 5%），连锁不断就一直有效'));
+      wrap.append(mk('span', 'sr-name', '📺 爽局生效中'), mk('span', 'sr-desc', '本趟出击出货率已升级（出红概率 8%），连锁不断就一直有效'));
       const d = mk('div', 'shop-row sel boost');
       d.append(wrap, mk('b', null, '✓'));
       shopBody.append(d);
     } else {
-      wrap.append(mk('span', 'sr-name', '📺 看广告 · 本趟升级爽局'), mk('span', 'sr-desc', '出货率大涨（出红概率 1.5%→5%），连锁整趟有效；最佳纪录不认爽局'));
+      wrap.append(mk('span', 'sr-name', '📺 看广告 · 本趟升级爽局'), mk('span', 'sr-desc', '出货率大涨（出红概率 1.5%→8%），连锁整趟有效；最佳纪录不认爽局'));
       const b = mk('button', 'shop-row boost');
       b.dataset.boost = '1';
       b.append(wrap, mk('b', null, '免费'));
