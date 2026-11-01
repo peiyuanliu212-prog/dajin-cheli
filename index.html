@@ -198,13 +198,61 @@ body.police { animation: police .16s steps(1) 6; }
 
 .share-preview { width: 100%; border-radius: 12px; margin-top: 10px; }
 
+/* ===== 加载页 / 开始页 ===== */
+.boot-screen, .title-screen { position: relative; min-height: calc(100vh - 120px); display: none; flex-direction: column; }
+.boot-screen.active, .title-screen.active { display: flex; }
+.boot-inner { margin: auto; width: 100%; text-align: center; padding-top: 6vh; }
+.boot-logo { margin-top: 0; }
+.boot-bar { width: 74%; height: 10px; margin: 34px auto 10px; border: 1px solid var(--khaki); border-radius: 6px; background: rgba(255,255,255,.06); overflow: hidden; }
+#boot-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #b98a1e, #ffd700, #fff2b0); transition: width .12s linear; }
+.boot-line { display: flex; justify-content: space-between; width: 74%; margin: 0 auto; color: var(--muted); font-size: 13px; }
+.boot-tip { margin-top: 26px; color: var(--khaki); font-size: 14px; letter-spacing: 2px; min-height: 20px; }
+.boot-ver { text-align: center; color: var(--muted); font-size: 12px; margin-top: auto; padding-bottom: 6px; }
+.title-inner { margin: auto; width: 100%; text-align: center; position: relative; z-index: 1; padding-top: 4vh; }
+.title-kicker { color: var(--khaki); font-size: 13px; letter-spacing: 3px; }
+.title-logo { font-size: 66px; margin-top: 12px; background: linear-gradient(100deg, #8a6410 15%, #ffd700 38%, #fff6c4 50%, #ffd700 62%, #8a6410 85%); background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: titleShine 3.2s ease-in-out infinite; }
+@keyframes titleShine { 0%, 100% { background-position: 0% 0; } 50% { background-position: 100% 0; } }
+.title-sub { margin-bottom: 8px; }
+.title-glow { position: absolute; left: 50%; top: 30%; width: 340px; height: 340px; transform: translate(-50%, -50%); background: radial-gradient(circle, rgba(255,215,0,.20), transparent 65%); animation: ultraPulse 2.6s ease-in-out infinite alternate; pointer-events: none; }
+.btn-title { font-size: 20px; padding: 15px 0; letter-spacing: 6px; margin-top: 20px; animation: titleBtnPulse 1.8s ease-in-out infinite; }
+@keyframes titleBtnPulse { 0%, 100% { box-shadow: 0 0 0 rgba(255,215,0,0); } 50% { box-shadow: 0 0 26px rgba(255,215,0,.45); } }
+
 </style>
 </head>
 <body>
 <div id="app">
 
+  <!-- 加载页 -->
+  <section id="screen-boot" class="screen active boot-screen">
+    <div class="hazard"></div>
+    <div class="boot-inner">
+      <h1 class="logo boot-logo">大金撤离</h1>
+      <p class="subtitle">再 贪 一 格</p>
+      <div class="boot-bar"><div id="boot-fill"></div></div>
+      <p class="boot-line"><span id="boot-stage">正在打开仓库大门…</span><span id="boot-pct">0%</span></p>
+      <p class="boot-tip" id="boot-tip">见好就收，是命。</p>
+    </div>
+    <p class="boot-ver">个人开发 · 规则全透明 · 广告全自愿</p>
+  </section>
+
+  <!-- 开始页 -->
+  <section id="screen-title" class="screen title-screen">
+    <div class="hazard"></div>
+    <div class="title-glow"></div>
+    <div class="title-inner">
+      <p class="title-kicker">逐 格 开 箱 · 见 好 就 收</p>
+      <h1 class="logo title-logo">大金撤离</h1>
+      <p class="subtitle title-sub">再 贪 一 格</p>
+      <p class="tagline">包里越来越满，货架越晃越凶。<br>下一格是翻倍，还是轰隆一声全压坏？</p>
+      <button id="btn-title-start" class="btn-primary btn-title">开始游戏</button>
+      <button id="btn-title-continue" class="btn-ghost hidden" style="width:100%;margin-top:10px">▶ 继续上局（未结束）</button>
+      <button id="btn-title-sound" class="btn-ghost sound-toggle">🔊 音效：开</button>
+    </div>
+    <p class="boot-ver">最佳纪录只认真本事 · 爽局不算数</p>
+  </section>
+
   <!-- 首页 -->
-  <section id="screen-home" class="screen active">
+  <section id="screen-home" class="screen">
     <div class="hazard"></div>
     <h1 class="logo">大金撤离</h1>
     <p class="subtitle">再 贪 一 格</p>
@@ -2261,6 +2309,42 @@ if (desktopAvailable()) {
     if (r.message) { dBtn.textContent = r.message; setTimeout(() => { dBtn.textContent = '📲 添加到桌面'; }, 2400); }
   });
 }
+
+
+// ---------- 启动流程：加载页 → 开始页 → 首页（fast 模式直达首页，不影响测试与老链接） ----------
+(function bootFlow() {
+  const titleSound = $('btn-title-sound');
+  const syncTitle = () => {
+    const c = $('btn-continue'), t = $('btn-title-continue');
+    if (c && t) t.classList.toggle('hidden', c.classList.contains('hidden'));
+    const h = $('btn-sound-home');
+    if (h && titleSound) titleSound.textContent = h.textContent;
+  };
+  $('btn-title-start').addEventListener('click', () => { Sfx.click(); show('screen-home'); });
+  $('btn-title-continue').addEventListener('click', () => { const c = $('btn-continue'); if (c) c.click(); });
+  if (titleSound) titleSound.addEventListener('click', () => { const h = $('btn-sound-home'); if (h) { h.click(); titleSound.textContent = h.textContent; } });
+  if (FAST) { show('screen-home'); return; }
+  show('screen-boot');
+  const stages = ['正在打开仓库大门…', '正在读取存档…', '正在校准货架…', '正在清点大金…'];
+  const tips = ['见好就收，是命。', '贪，是本事；收，是命。', '震动到顶之前，每一格都是博弈。', '防震箱里那一件，塌了也还在。', '爽局虽爽，最佳纪录不认。'];
+  const fill = $('boot-fill'), pct = $('boot-pct'), stageEl = $('boot-stage'), tipEl = $('boot-tip');
+  let tipIdx = 0;
+  const tipTimer = setInterval(() => { tipIdx = (tipIdx + 1) % tips.length; tipEl.textContent = tips[tipIdx]; }, 620);
+  const t0 = performance.now(), total = 1250;
+  const step = (now) => {
+    const p = Math.min(1, (now - t0) / total);
+    const eased = 1 - Math.pow(1 - p, 2);
+    const v = Math.round(eased * 100);
+    fill.style.width = v + '%';
+    pct.textContent = v + '%';
+    stageEl.textContent = stages[Math.min(stages.length - 1, Math.floor(p * stages.length))];
+    if (p < 1) { requestAnimationFrame(step); return; }
+    clearInterval(tipTimer);
+    syncTitle();
+    show('screen-title');
+  };
+  requestAnimationFrame(step);
+})();
 
 </script>
 </body>
