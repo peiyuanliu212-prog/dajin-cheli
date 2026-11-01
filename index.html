@@ -346,6 +346,7 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
         <p>💎 两件镇馆瑰宝悄悄进了货架——摸到就是封神局</p>
         <p>🔒 塌架保住的宝贝不再蒸发：作纪念品入仓，能看还能展</p>
         <p>📖 图鉴改规矩：真带回家的才点亮，集齐更有含金量</p>
+        <p>📺 广告奖励更稳了：看完广告哪怕页面刷新，奖励也会自动补发到账</p>
       </div>
       <button id="btn-title-start" class="btn-primary btn-title">开始游戏</button>
       <button id="btn-title-continue" class="btn-ghost hidden" style="width:100%;margin-top:10px">▶ 继续上局（未结束）</button>
@@ -1581,28 +1582,58 @@ function addMemorial(save, item) {
 /* ===== src/ads.js ===== */
 // 激励广告点位接口（ADR-026 爽局 / ADR-032 全量广告位）
 // 红线：广告收益永远独立记账——不进评级、不进最佳纪录（爽局/广告扩容的局打助力标，见 save.recordResult）
-// 虎扑容器桥（与《乱世拼将》同款 vatask，实测口径）：
+// 虎扑容器桥（vatask，口径以官方技能文档原文为准，ADR-046 严肃审查后重写）：
 //   window.ColorboxAI.vatask.completeRewardVideo() → {code:200, data:{rewarded}}
-//   window.ColorboxAI.vatask.getActivityTaskState() → {code:200, data:{tasks:[{taskCode:'reward', status:'completed'}]}}
-// 容器可能在广告期间重载页面：拉起前先落 PENDING 标记（含点位与上下文），重载后凭平台任务状态核对补发（30 分钟内有效）。
+//   window.ColorboxAI.vatask.getActivityTaskState() → {code:200, data:{availableChanceCount, tasks:[...]}}
+// 平台真记账是服务端 availableChanceCount：完播自动 +chanceGrantCount、跨重载不丢。
+// tasks[].status 的 completed 是「本周期已完成」口径（文档原文），不是单次完播凭证，禁止用它判定补发
+// ——《乱世拼将》v5.18 真机实锤：凭 status 补发从未在真机触发；且旧实现「读标记即删」使任何一次
+// 核对失败（桥未就绪/查询异常/记账延迟）都永久丢奖（大金 v7 主人真机复现）。
+// 现行机制：拉起前把当前余额记入 PENDING.base；开机核对凭余额差量（now > base）判定完播；
+// 标记只在核对落定（确认记账→补发 / 超 12h 未记账→过期）后删除，查询失败或未落定一律保留、下次开机再核。
+// 无基线的存量标记（旧版写入）退回 status 口径核对，仅作兼容。
 const PENDING_KEY = 'dajin_pending_ad';
+const PENDING_TTL_MS = 12 * 3600 * 1000;
 
 function vataskReady() {
   return typeof window !== 'undefined' && !!(window.ColorboxAI && window.ColorboxAI.vatask && typeof window.ColorboxAI.vatask.completeRewardVideo === 'function');
 }
 
-// 统一激励观看：kind ∈ boost 爽局 / rescue 塌架救援 / coin 结算仓币加成 / expand 满仓扩容 / supply 每日补给
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function clearPending() { try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ } }
+
+// 读平台余额（服务端 availableChanceCount）；读不到返回 null，绝不猜（ADR-046）
+// 桥调用加 2.5s 超时兜底：状态查询挂死不能堵住广告拉起（超时按读不到处理，base 记 null）
+async function readChanceCount() {
+  if (!vataskReady() || typeof window.ColorboxAI.vatask.getActivityTaskState !== 'function') return null;
+  try {
+    const st = await Promise.race([
+      window.ColorboxAI.vatask.getActivityTaskState(),
+      sleep(2500).then(() => null),
+    ]);
+    if (!st || st.code !== 200 || !st.data) return null;
+    const n = st.data.availableChanceCount;
+    return (typeof n === 'number' && Number.isFinite(n)) ? n : null;
+  } catch { return null; }
+}
+
+// 统一激励观看：kind ∈ boost 爽局 / rescue 塌架救援 / coin 结算仓币加成 / expand 满仓扩容 / supply 每日补给 等
 // 容器内走真激励视频；无容器环境（Pages/本地）为占位模拟（simulated:true，UI 明示）。
 async function watchReward(kind, context = {}) {
   if (!vataskReady()) return { granted: true, simulated: true };
-  try { localStorage.setItem(PENDING_KEY, JSON.stringify({ type: kind, ts: Date.now(), ...context })); } catch { /* 标记失败不阻塞拉起 */ }
+  const base = await readChanceCount();
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify({ type: kind, ts: Date.now(), base, ...context })); } catch { /* 标记失败不阻塞拉起 */ }
   try {
     const res = await window.ColorboxAI.vatask.completeRewardVideo();
     const ok = !!(res && res.code === 200 && res.data && res.data.rewarded);
-    try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
-    return ok ? { granted: true, simulated: false } : { granted: false, simulated: false, message: (res && res.message) || '未获得奖励' };
+    if (ok) { clearPending(); return { granted: true, simulated: false }; }
+    // 平台明确回执（code 200）说未完播 → 本次落定，删标记；
+    // 非 200/无回执 → 不落定，保留标记待开机凭余额差量核对（防服务端记账已到、回执异常丢奖）
+    if (res && res.code === 200) clearPending();
+    return { granted: false, simulated: false, message: (res && res.message) || '未获得奖励' };
   } catch {
-    try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
+    // 拉起/回执异常：保留标记，下次开机凭余额差量核对补发（完播可能已在服务端记账）
     return { granted: false, simulated: false, message: '广告拉起失败，请重试' };
   }
 }
@@ -1612,21 +1643,35 @@ const Ads = {
   boostRun() { return watchReward('boost'); },
   // 其余点位（ADR-032）统一入口
   watch(kind, context) { return watchReward(kind, context); },
-  // 开机恢复：广告期间页面被容器重载时，凭 PENDING 标记 + 平台任务状态核对；
-  // 核实完成返回标记对象 {type, ts, runId?, amount?}（发放口径在 main 按点位处理），否则 null
+  // 开机恢复：广告期间页面被容器重载时，凭 PENDING 基线 + 平台余额差量核对；
+  // 核实完成返回标记对象 {type, ts, runId?, amount?}（发放口径在 main 按点位处理）；
+  // 未落定（余额未增/查询失败/桥未就绪）返回 null 且标记原样保留，绝不提前删。
   async recoverPending() {
     let raw = null;
-    try { raw = localStorage.getItem(PENDING_KEY); if (raw) localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
-    if (!raw || !vataskReady() || typeof window.ColorboxAI.vatask.getActivityTaskState !== 'function') return null;
+    try { raw = localStorage.getItem(PENDING_KEY); } catch { return null; }
+    if (!raw) return null;
+    if (!vataskReady() || typeof window.ColorboxAI.vatask.getActivityTaskState !== 'function') return null; // 桥未就绪：保留标记，下次再核
+    let j = null;
+    try { j = JSON.parse(raw); } catch { clearPending(); return null; }
+    if (!j || !j.type) { clearPending(); return null; }
+    const age = Date.now() - (j.ts || 0);
+    if (typeof j.base === 'number') {
+      let now = await readChanceCount();
+      if (now === null) { await sleep(900); now = await readChanceCount(); } // 查询失败给一次重试
+      if (now === null) return null; // 仍失败：保留标记，下次开机再核
+      if (now > j.base) { clearPending(); return j; } // 落定：完播已在服务端记账 → 补发
+      if (age > PENDING_TTL_MS) { clearPending(); return null; } // 落定：超 12h 未记账 → 判未完播，过期清除防堵死
+      return null; // 未落定（可能记账延迟）：保留标记，下次开机再核
+    }
+    // 存量无基线标记（旧版写入）：退回 status 口径核对，仅此一代兼容；查询失败同样保留
     try {
-      const j = JSON.parse(raw);
-      if (!j || !j.type || Date.now() - (j.ts || 0) > 30 * 60 * 1000) return null;
       const st = await window.ColorboxAI.vatask.getActivityTaskState();
       if (st && st.code === 200 && st.data) {
         const task = (st.data.tasks || []).find(x => x.taskCode === 'reward');
-        if (task && task.status === 'completed') return j;
+        if (task && task.status === 'completed') { clearPending(); return j; }
+        if (age > PENDING_TTL_MS) clearPending();
       }
-    } catch { /* 核对失败不发 */ }
+    } catch { /* 核对失败：保留标记 */ }
     return null;
   },
 };
