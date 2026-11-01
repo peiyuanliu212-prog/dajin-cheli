@@ -211,7 +211,7 @@ body.police { animation: police .16s steps(1) 6; }
 .title-inner { margin: auto; width: 100%; text-align: center; position: relative; z-index: 1; padding-top: 4vh; }
 .title-kicker { color: var(--khaki); font-size: 13px; letter-spacing: 3px; }
 .title-logo { font-size: 66px; margin-top: 12px; background: linear-gradient(100deg, #8a6410 15%, #ffd700 38%, #fff6c4 50%, #ffd700 62%, #8a6410 85%); background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: titleShine 3.2s ease-in-out infinite; }
-@keyframes titleShine { 0%, 100% { background-position: 0% 0; } 50% { background-position: 100% 0; } }
+@keyframes titleShine { 0% { background-position: 0% 0; } 22% { background-position: 100% 0; } 100% { background-position: 100% 0; } } /* 扫过后停留：重绘占空比约 22%（ADR-042） */
 .title-sub { margin-bottom: 8px; }
 .title-glow { position: absolute; left: 50%; top: 30%; width: 340px; height: 340px; transform: translate(-50%, -50%); background: radial-gradient(circle, rgba(255,215,0,.20), transparent 65%); animation: ultraPulse 2.6s ease-in-out infinite alternate; pointer-events: none; }
 .btn-title { font-size: 20px; padding: 15px 0; letter-spacing: 6px; margin-top: 20px; animation: titleBtnPulse 1.8s ease-in-out infinite; }
@@ -231,9 +231,7 @@ body.police { animation: police .16s steps(1) 6; }
 .cell.opened.t3 { border-color: #b07fe8; box-shadow: inset 0 0 10px rgba(176, 127, 232, .35); }
 .cell.opened.t4 { border-color: #ffd24d; box-shadow: inset 0 0 12px rgba(255, 210, 77, .45); }
 .cell.opened.t5 { border-color: #ff5a4d; box-shadow: inset 0 0 14px rgba(255, 90, 77, .55); }
-.alert-bar.hot { animation: barPulse .8s ease-in-out infinite; }
-.alert-bar.hot #alert-fill { box-shadow: 0 0 12px rgba(229, 72, 77, .85); }
-@keyframes barPulse { 0%, 100% { box-shadow: 0 0 0 rgba(229,72,77,0); } 50% { box-shadow: 0 0 10px rgba(229,72,77,.45); } }
+.alert-bar.hot #alert-fill { box-shadow: 0 0 12px rgba(229, 72, 77, .85); } /* 静态辉光：box-shadow 逐帧动画会触发整帧重绘，已去除（ADR-042） */
 .intel-list { max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
 .intel-tier { color: var(--muted); font-size: 13px; margin: 8px 0 0; text-align: left; }
 .intel-item { text-align: left; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; color: var(--text); cursor: pointer; font-size: 15px; }
@@ -1769,7 +1767,7 @@ function shopFeeMethod(warehouse) {
   if ((save.vouchers[warehouse.id] ?? 0) > 0) return { fee, method: 'voucher', cost: 0 };
   return { fee, method: 'coins', cost: fee };
 }
-function shopSelectedCost() { let t = 0; for (const k of shopCtx?.items ?? []) t += ECONOMY.shop[k].price; return t; }
+function shopSelectedCost() { let t = 0; for (const k of shopCtx?.items ?? []) t += ECONOMY.shop[k]?.price ?? 0; return t; }
 function openShop(warehouse) {
   shopCtx = { warehouse, items: new Set(), intelTarget: null };
   $('shop-modal').classList.remove('hidden');
@@ -2400,7 +2398,7 @@ function finishToResult(result) {
     if (result.chainLeg >= 2) body.append(mk('p', 'top-item', `🔗 连锁在第 ${result.chainLeg} 仓中断——已落袋的仓币和战绩都还在。`));
   }
   clearRunCheckpoint();
-  renderHome();
+  window.__DAJIN_LAST_CARD__ = null; // 海报延后绘制（ADR-042）：先上屏，下一帧再画卡与刷新首页
   $('btn-rescue').classList.toggle('hidden', !(result.outcome === 'caught' && !result.rescued && !result.chainGuarded && rescueCandidate(result)));
   $('btn-guard').classList.toggle('hidden', !(result.outcome === 'caught' && result.chainLeg >= 2 && !result.rescued && !result.chainGuarded));
   $('btn-coinbonus').classList.toggle('hidden', !(result.outcome !== 'caught' && !result.coinBonusApplied && Math.min(Math.floor((lastCoins.run ?? 0) * ECONOMY.ads.coinBonusRate), ECONOMY.ads.coinBonusCap) > 0));
@@ -2408,9 +2406,14 @@ function finishToResult(result) {
   $('btn-post').classList.toggle('hidden', !inContainer()); // 发帖晒战绩仅虎扑容器内可用
   $('btn-share').classList.toggle('hidden', inContainer()); // 容器内以发帖分享（平台规范路径）
   $('post-note').textContent = '';
-  const manifest = drawShareCard($('share-canvas'), result, { nickname: playerNick });
-  window.__DAJIN_LAST_CARD__ = manifest;
   show('screen-result');
+  requestAnimationFrame(() => requestAnimationFrame(() => { if (lastResultRef === result) { ensureShareCard(); renderHome(); } }));
+}
+
+// 海报按需绘制：延后绘制未完成时，分享/发帖入口先同步补画（ADR-042）
+function ensureShareCard() {
+  if (window.__DAJIN_LAST_CARD__ || !lastResultRef) return;
+  window.__DAJIN_LAST_CARD__ = drawShareCard($('share-canvas'), lastResultRef, { nickname: playerNick });
 }
 // 广告救援候选：背包里最贵的未防震件品（ADR-032）
 function rescueCandidate(result) {
@@ -2472,6 +2475,7 @@ $('btn-coinbonus').addEventListener('click', async () => {
 let posting = false;
 $('btn-post').addEventListener('click', async () => {
   if (posting || !run) return;
+  ensureShareCard();
   posting = true;
   const btn = $('btn-post');
   btn.disabled = true;
@@ -2499,6 +2503,7 @@ $('btn-post').addEventListener('click', async () => {
   btn.disabled = false;
 });
 $('btn-share').addEventListener('click', () => {
+  ensureShareCard();
   // 页面内展示战绩图（长按/右键保存）——平台规范：不做程序化保存链路
   const img = $('share-preview');
   img.src = $('share-canvas').toDataURL('image/png');
