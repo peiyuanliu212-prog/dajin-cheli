@@ -404,9 +404,9 @@ const TIER_KEYS = ['white', 'green', 'blue', 'purple', 'gold', 'red'];
 const CONFIGS = {
   A: {
     id: 'A', label: 'A 爽局', desc: '出货率高，爽感直接',
-    tierWeights: { 0: 0.28, 1: 0.30, 2: 0.22, 3: 0.11, 4: 0.06, 5: 0.03 },
+    tierWeights: { 0: 0.25, 1: 0.28, 2: 0.22, 3: 0.12, 4: 0.08, 5: 0.05 },
     // 评级线按仓分线（ADR-027 定版）：各仓带出分位 p92/p75/p50，S≈8%/仓
-    ratingThresholdsWan: { normal: { S: 235, A: 170, B: 60 }, secret: { S: 305, A: 205, B: 125 }, topsecret: { S: 350, A: 235, B: 165 } },
+    ratingThresholdsWan: { normal: { S: 310, A: 205, B: 130 }, secret: { S: 360, A: 245, B: 170 }, topsecret: { S: 410, A: 305, B: 210 } },
   },
   B: {
     id: 'B', label: 'B 稀有', desc: '大金稀有，晒图有面',
@@ -1592,12 +1592,12 @@ function renderShop() {
   {
     const wrap = mk('span');
     if (boostOn) {
-      wrap.append(mk('span', 'sr-name', '📺 爽局生效中'), mk('span', 'sr-desc', '本趟出击出货率已升级（出红概率翻倍），连锁不断就一直有效'));
+      wrap.append(mk('span', 'sr-name', '📺 爽局生效中'), mk('span', 'sr-desc', '本趟出击出货率已升级（出红概率 5%），连锁不断就一直有效'));
       const d = mk('div', 'shop-row sel boost');
       d.append(wrap, mk('b', null, '✓'));
       shopBody.append(d);
     } else {
-      wrap.append(mk('span', 'sr-name', '📺 看广告 · 本趟升级爽局'), mk('span', 'sr-desc', '出货率大涨（出红概率 1.5%→3%），连锁整趟有效；最佳纪录不认爽局'));
+      wrap.append(mk('span', 'sr-name', '📺 看广告 · 本趟升级爽局'), mk('span', 'sr-desc', '出货率大涨（出红概率 1.5%→5%），连锁整趟有效；最佳纪录不认爽局'));
       const b = mk('button', 'shop-row boost');
       b.dataset.boost = '1';
       b.append(wrap, mk('b', null, '免费'));
