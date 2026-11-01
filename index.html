@@ -454,12 +454,12 @@ const CONFIGS = {
     id: 'A', label: 'A 爽局', desc: '出货率高，爽感直接',
     tierWeights: { 0: 0.21, 1: 0.25, 2: 0.23, 3: 0.13, 4: 0.10, 5: 0.08 },
     // 评级线按仓分线（ADR-027 定版）：各仓带出分位 p92/p75/p50，S≈8%/仓
-    ratingThresholdsWan: { normal: { S: 360, A: 245, B: 175 }, secret: { S: 420, A: 320, B: 215 }, topsecret: { S: 490, A: 370, B: 265 } },
+    ratingThresholdsWan: { normal: { S: 360, A: 245, B: 175 }, secret: { S: 420, A: 320, B: 215 }, topsecret: { S: 490, A: 370, B: 265 }, challenge: { S: 490, A: 370, B: 265 } },
   },
   B: {
     id: 'B', label: 'B 稀有', desc: '大金稀有，晒图有面',
     tierWeights: { 0: 0.32, 1: 0.32, 2: 0.21, 3: 0.095, 4: 0.04, 5: 0.015 },
-    ratingThresholdsWan: { normal: { S: 200, A: 115, B: 38 }, secret: { S: 225, A: 160, B: 56 }, topsecret: { S: 270, A: 195, B: 85 } },
+    ratingThresholdsWan: { normal: { S: 200, A: 115, B: 38 }, secret: { S: 225, A: 160, B: 56 }, topsecret: { S: 270, A: 195, B: 85 }, challenge: { S: 270, A: 195, B: 85 } },
   },
 };
 const DEFAULT_CONFIG = 'B';
@@ -470,6 +470,7 @@ const WAREHOUSES = [
   { id: 'normal', name: '普通仓', tag: '社区旧仓 · 堆得还算稳', weightMult: 1, alertMin: 5, alertMax: 8, hint: '堆得不算高，货色一般' },
   { id: 'secret', name: '精品仓', tag: '精品库房 · 堆得更高', weightMult: 1.6, alertMin: 6, alertMax: 9, hint: '好货明显变多，震动也涨得快' },
   { id: 'topsecret', name: '珍品仓', tag: '珍品库房 · 堆到了天花板', weightMult: 2.4, alertMin: 8, alertMax: 10, hint: '大金扎堆，震动蹿得最快' },
+  { id: 'challenge', name: '挑战仓', tag: '深夜挑战库 · 只认仓币', weightMult: 2.4, alertMin: 8, alertMax: 10, hint: '票价 200 仓币，出货率直接按爽局算，不看广告；最佳纪录不认' },
 ];
 
 // 把紫/金/红权重乘以 mult，增加量从白/绿按原比例扣除，蓝不变，结果归一
@@ -496,7 +497,7 @@ function depthNameAt(opens) {
 // M3 经济系统（设计案 v0.2 冻结，ADR-025）：仓币折算/入场费/道具/连锁
 const ECONOMY = {
   rateBands: [[0.05, 0.2], [0.25, 0.5], [0.55, 1.0], [Infinity, 1.5]], // 对未取整 R 查表
-  entryFees: { normal: 0, secret: 25, topsecret: 60 },
+  entryFees: { normal: 0, secret: 25, topsecret: 60, challenge: 200 },
   shop: {
     smoke: { price: 30, name: '减震垫', desc: '局内使用：震动 −15，每局 1 个', alertCut: 15 },
     expand: { price: 40, name: '扩容贴', desc: '本局背包 +2 格（20→22）', cells: 2 },
@@ -505,7 +506,7 @@ const ECONOMY = {
   chainMult: [1, 1.15, 1.25, 1.3], // 按连锁仓序（1 起），第 4 仓起封顶
   achievementCoin: 20,
   setCoin: 100,
-  ads: { supplyCoins: 40, coinBonusRate: 0.5, expandCells: 4, recoveryCompCoins: 30 }, // ADR-032 广告位参数
+  ads: { supplyCoins: 40, coinBonusRate: 0.5, coinBonusCap: 40, expandCells: 4, recoveryCompCoins: 30 }, // ADR-032 广告位参数
 };
 function coinRateAt(R) {
   for (const [t, r] of ECONOMY.rateBands) if (R < t) return r;
@@ -710,8 +711,9 @@ function genItem(streams, config, warehouse, opens) {
 // 规则口径：GAME_RULES（R1 时序、R2 防震标记、R3 摆放/重排、丢弃 +5/件；塌架判定为概率坡道，ADR-021）
 
 class Run {
-  constructor({ config, warehouse, seed, extraCells = 0, dualInsurance = false, smokeBombs = 0, chainLeg = 1, runId = null, boosted = false }) {
+  constructor({ config, warehouse, seed, extraCells = 0, dualInsurance = false, smokeBombs = 0, chainLeg = 1, runId = null, boosted = false, boostKind = null }) {
     this.boosted = boosted; // 广告爽局（ADR-026）：config 已是生效概率表（爽局=A），此标记供纪录口径与展示
+    this.boostKind = boostKind; // 'ad' 广告爽局 | 'paid' 挑战仓付费（ADR-039）
     this.baseExtraCells = extraCells; // 开局扩容（检查点口径：局内广告扩容靠动作日志回放，不进构造参数）
     this.adExpanded = false; // 广告临时扩容（ADR-032）：用过的局打助力标，最佳纪录不认
     this.config = config;
@@ -903,7 +905,7 @@ class Run {
         final: I, rating: null, insuredItem: insItems[0] ?? null, insuredItems: insItems, topItem,
         opens: this.opens, items, hasRed: this.hasRed, seed: this.seed, reveals: this.reveals,
         warehouse: this.warehouse, config: this.config, alert: this.alert,
-        riskR, coinRate, chainMult, coinsGained: 0, chainLeg: this.chainLeg, runId: this.runId, boosted: this.boosted, adExpanded: this.adExpanded,
+        riskR, coinRate, chainMult, coinsGained: 0, chainLeg: this.chainLeg, runId: this.runId, boosted: this.boosted, boostKind: this.boostKind, adExpanded: this.adExpanded,
       };
     }
     const C = Math.round(this.bagValue() * 10) / 10;
@@ -914,7 +916,7 @@ class Run {
       opens: this.opens, items, hasRed: this.hasRed, seed: this.seed, reveals: this.reveals,
       warehouse: this.warehouse, config: this.config, alert: this.alert,
       // M3 仓币：基数只认原始带出 C（不含早撤加成/广告加成），整仓向下取整一次
-      riskR, coinRate, chainMult, coinsGained: Math.floor(C * coinRate * chainMult), chainLeg: this.chainLeg, runId: this.runId, boosted: this.boosted, adExpanded: this.adExpanded,
+      riskR, coinRate, chainMult, coinsGained: Math.floor(C * coinRate * chainMult), chainLeg: this.chainLeg, runId: this.runId, boosted: this.boosted, boostKind: this.boostKind, adExpanded: this.adExpanded,
     };
   }
 
@@ -924,7 +926,7 @@ class Run {
       bagValue: this.bagValue(), bagCount: this.bag.length, gross: this.gross,
       pending: this.pending?.name ?? null, seed: this.seed,
       config: this.config.id, warehouse: this.warehouse.id, nextCaughtProb: this.nextCaughtProb(),
-      riskR: 1 - this.surv, smoke: this.smoke, chainLeg: this.chainLeg, bagCapacity: this.bagCapacity, boosted: this.boosted, adExpanded: this.adExpanded, coinsPreview: this.phase === 'over' ? null : Math.floor(this.bagValue() * coinRateAt(1 - this.surv) * chainMultAt(this.chainLeg)),
+      riskR: 1 - this.surv, smoke: this.smoke, chainLeg: this.chainLeg, bagCapacity: this.bagCapacity, boosted: this.boosted, boostKind: this.boostKind, adExpanded: this.adExpanded, coinsPreview: this.phase === 'over' ? null : Math.floor(this.bagValue() * coinRateAt(1 - this.surv) * chainMultAt(this.chainLeg)),
     };
   }
 }
@@ -1166,7 +1168,7 @@ function recordResult(save, result) {
     t: Date.now(), outcome: result.outcome,
     value: result.outcome === 'caught' ? result.I : result.C,
     rating: result.rating, warehouse: result.warehouse.id, config: result.config.id,
-    opens: result.opens, hasRed: result.hasRed, boosted: !!result.boosted, assisted: !!result.adExpanded,
+    opens: result.opens, hasRed: result.hasRed, boosted: !!result.boosted, boostKind: result.boostKind ?? null, assisted: !!result.adExpanded,
   });
   save.history = save.history.slice(0, 30);
   // 成就判定（基于入账后的累计状态 + 本局结果）
@@ -1423,7 +1425,7 @@ function saveRunCheckpoint() {
       extraCells: run.baseExtraCells ?? 0, // 局内广告扩容不进构造参数，靠动作日志回放（ADR-032）
       dualInsurance: run.insuranceCount >= 2,
       smokeBombs: run.smoke + run.actionLog.filter(a => a[0] === 'smoke').length,
-      chainLeg: run.chainLeg, runId: run.runId, boosted: run.boosted,
+      chainLeg: run.chainLeg, runId: run.runId, boosted: run.boosted, boostKind: run.boostKind,
     },
     actions: run.actionLog,
   };
@@ -1503,7 +1505,7 @@ $('btn-continue').addEventListener('click', () => {
   if (!ck) { renderHome(); return; }
   try {
     const warehouse = WAREHOUSES.find(w => w.id === ck.ctor.warehouseId);
-    const restored = restoreRun({ config: CONFIGS[ck.ctor.configId], warehouse, seed: ck.ctor.seed, extraCells: ck.ctor.extraCells, dualInsurance: ck.ctor.dualInsurance, smokeBombs: ck.ctor.smokeBombs, chainLeg: ck.ctor.chainLeg, runId: ck.ctor.runId, boosted: ck.ctor.boosted }, ck.actions);
+    const restored = restoreRun({ config: CONFIGS[ck.ctor.configId], warehouse, seed: ck.ctor.seed, extraCells: ck.ctor.extraCells, dualInsurance: ck.ctor.dualInsurance, smokeBombs: ck.ctor.smokeBombs, chainLeg: ck.ctor.chainLeg, runId: ck.ctor.runId, boosted: ck.ctor.boosted, boostKind: ck.ctor.boostKind ?? null }, ck.actions);
     if (restored.phase === 'over') { clearRunCheckpoint(); renderHome(); return; } // 该局其实已结算，检查点过期
     run = restored;
     boostChain = !!ck.boostChain;
@@ -1637,7 +1639,13 @@ function renderShop() {
   shopBody.replaceChildren();
   shopBody.append(mk('div', 'shop-fee', `${feeTxt} · 余额 ${save.coins} 🪙`));
   if (chainNextLeg > 1) shopBody.append(mk('div', 'shop-fee', `🔗 连锁第 ${chainNextLeg} 仓：仓币倍率 ×${chainMultAt(chainNextLeg)} · 每格震动 +${chainNextLeg - 1}`));
-  {
+  if (warehouse.id === 'challenge') {
+    const wrap = mk('span');
+    wrap.append(mk('span', 'sr-name', '🎟 挑战仓 · 爽局爆率已含在票价里'), mk('span', 'sr-desc', '出货率按爽局（出红 8%）计算，不看广告；最佳纪录不认'));
+    const d = mk('div', 'shop-row sel boost');
+    d.append(wrap, mk('b', null, '✓'));
+    shopBody.append(d);
+  } else {
     const wrap = mk('span');
     if (boostOn) {
       wrap.append(mk('span', 'sr-name', '📺 爽局生效中'), mk('span', 'sr-desc', '本趟出击出货率已升级（出红概率 8%），连锁不断就一直有效'));
@@ -1717,8 +1725,10 @@ function startRun(warehouse, opts = {}) {
   const leg = chainNextLeg; chainNextLeg = 1;
   if (leg === 1) { boostChain = boostNow || boostCredit; boostCredit = false; } // 新出击：商店激活或重载补发额度
   else if (boostNow) boostChain = true;              // 连锁中途补看广告，整趟生效
-  const boosted = boostChain;
-  run = new Run({ config: boosted ? CONFIGS.A : CONFIGS.B, warehouse, seed, chainLeg: leg, boosted, ...runOpts });
+  const paidBoost = warehouse.id === 'challenge';
+  const boosted = boostChain || paidBoost;
+  const boostKind = paidBoost && !boostChain ? 'paid' : (boosted ? 'ad' : null);
+  run = new Run({ config: boosted ? CONFIGS.A : CONFIGS.B, warehouse, seed, chainLeg: leg, boosted, boostKind, ...runOpts });
   setupRunScreen(warehouse);
   setEvent('点任意一格开始搜。越往深处，好货越多。', false);
 }
@@ -1729,7 +1739,7 @@ function setupRunScreen(warehouse) {
   lastCoins = { run: 0, bonus: 0 };
   discardSel = new Set();
   $('run-seed').textContent = run.seed;
-  $('run-meta').textContent = `${warehouse.name} · ${run.boosted ? '📺 爽局（出货率↑）' : 'B 稀有'}${run.chainLeg > 1 ? ` · 🔗 连锁第 ${run.chainLeg} 仓` : ''}`;
+  $('run-meta').textContent = `${warehouse.name} · ${run.boosted ? (run.boostKind === 'paid' ? '🎟 挑战仓（出货率↑）' : '📺 爽局（出货率↑）') : 'B 稀有'}${run.chainLeg > 1 ? ` · 🔗 连锁第 ${run.chainLeg} 仓` : ''}`;
   $('bag-title').textContent = bagTitleText();
   {
     const cellsEl = $('cells');
@@ -2031,7 +2041,7 @@ function finishToResult(result) {
   const ledgerEl = rows => { const card = mk('div', 'card ledger'); rows.forEach(r => card.append(r)); return card; };
   if (result.outcome === 'caught') {
     body.append(headEl('lose', '货 架 塌 了'));
-    body.append(mk('p', 'result-sub', `${result.warehouse.name} · ${result.boosted ? '📺广告爽局' : result.config.label} · 开了 ${result.opens} 格，终局震动 ${result.alert}`));
+    body.append(mk('p', 'result-sub', `${result.warehouse.name} · ${result.boosted ? (result.boostKind === 'paid' ? '🎟挑战仓' : '📺广告爽局') : result.config.label} · 开了 ${result.opens} 格，终局震动 ${result.alert}`));
     const rows = [
       ledgerRow('搜获总值', `${fmtWan(result.G)} 万`),
       ledgerRow('被压坏', `-${fmtWan(result.G - result.I)} 万`),
@@ -2046,7 +2056,7 @@ function finishToResult(result) {
     if (result.rescued) body.append(mk('p', 'top-item', '📺 广告救援：多保住了一件（已计入防震保留）。'));
   } else {
     body.append(headEl('win', result.outcome === 'cleared' ? '整仓搬空' : '带出成功'));
-    body.append(mk('p', 'result-sub', `${result.warehouse.name} · ${result.boosted ? '📺广告爽局' : result.config.label} · 开了 ${result.opens} 格 · 震动 ${result.alert}`));
+    body.append(mk('p', 'result-sub', `${result.warehouse.name} · ${result.boosted ? (result.boostKind === 'paid' ? '🎟挑战仓' : '📺广告爽局') : result.config.label} · 开了 ${result.opens} 格 · 震动 ${result.alert}`));
     const stampWrap = mk('div');
     stampWrap.style.textAlign = 'center';
     stampWrap.append(mk('span', 'stamp', result.rating));
@@ -2083,7 +2093,7 @@ function finishToResult(result) {
   clearRunCheckpoint();
   renderHome();
   $('btn-rescue').classList.toggle('hidden', !(result.outcome === 'caught' && !result.rescued && rescueCandidate(result)));
-  $('btn-coinbonus').classList.toggle('hidden', !(result.outcome !== 'caught' && !result.coinBonusApplied && Math.floor((lastCoins.run ?? 0) * ECONOMY.ads.coinBonusRate) > 0));
+  $('btn-coinbonus').classList.toggle('hidden', !(result.outcome !== 'caught' && !result.coinBonusApplied && Math.min(Math.floor((lastCoins.run ?? 0) * ECONOMY.ads.coinBonusRate), ECONOMY.ads.coinBonusCap) > 0));
   $('ad-note').textContent = '';
   $('btn-post').classList.toggle('hidden', !inContainer()); // 发帖晒战绩仅虎扑容器内可用
   $('btn-share').classList.toggle('hidden', inContainer()); // 容器内以发帖分享（平台规范路径）
@@ -2121,7 +2131,7 @@ $('btn-rescue').addEventListener('click', async () => {
 $('btn-coinbonus').addEventListener('click', async () => {
   const result = lastResultRef;
   if (!result || result.coinBonusApplied) return;
-  const amount = Math.floor((lastCoins.run ?? 0) * ECONOMY.ads.coinBonusRate);
+  const amount = Math.min(Math.floor((lastCoins.run ?? 0) * ECONOMY.ads.coinBonusRate), ECONOMY.ads.coinBonusCap);
   if (amount <= 0) return;
   const btn = $('btn-coinbonus');
   btn.disabled = true;
@@ -2152,7 +2162,7 @@ $('btn-post').addEventListener('click', async () => {
     const lines = [
       nick ? `@${nick} 的战绩单` : '我的战绩单',
       caught ? `结果：货架塌了，防震保留 ${fmtWan(result.I)} 万${result.topItem ? `（${result.topItem.name}）` : ''}，仓币 +0` : `结果：成功带出，带出 ${fmtWan(result.C)} 万，评级 ${result.rating}${result.topItem ? `，最贵 ${result.topItem.name}` : ''}，仓币 +${result.coinsGained}`,
-      result.boosted ? '本局是广告爽局（出货率拉满）' : '纯 B 正赛局',
+      result.boosted ? (result.boostKind === 'paid' ? '本局是挑战仓（付费爽局，出货率拉满）' : '本局是广告爽局（出货率拉满）') : '纯 B 正赛局',
       result.chainLeg > 1 ? `连锁第 ${result.chainLeg} 仓` : '',
       '逐格开箱，见好就收还是再贪一格？来《大金撤离：再贪一格》试试手气。',
     ].filter(Boolean);
@@ -2266,7 +2276,7 @@ function renderHistory() {
     const row = mk('div', `hist-row${hst.outcome === 'caught' ? ' caught' : ''}`);
     const left = mk('span');
     left.append(document.createTextNode(`${label} · ${whName(hst.warehouse)} `),
-      mk('span', 'h-meta', `${when} · 开 ${hst.opens} 格${hst.hasRed ? ' · 出大金' : ''}${hst.rating ? ` · ${hst.rating} 级` : ''}${hst.boosted ? ' · 📺爽局' : hst.assisted ? ' · 📺助力' : ''}`));
+      mk('span', 'h-meta', `${when} · 开 ${hst.opens} 格${hst.hasRed ? ' · 出大金' : ''}${hst.rating ? ` · ${hst.rating} 级` : ''}${hst.boosted ? (hst.boostKind === 'paid' ? ' · 🎟挑战' : ' · 📺爽局') : hst.assisted ? ' · 📺助力' : ''}`));
     row.append(left, mk('span', 'h-val', `${fmtWan(hst.value)} 万`));
     hb.append(row);
   }
