@@ -454,12 +454,12 @@ const CONFIGS = {
     id: 'A', label: 'A 爽局', desc: '出货率高，爽感直接',
     tierWeights: { 0: 0.21, 1: 0.25, 2: 0.23, 3: 0.13, 4: 0.10, 5: 0.08 },
     // 评级线按仓分线（ADR-027 定版）：各仓带出分位 p92/p75/p50，S≈8%/仓
-    ratingThresholdsWan: { normal: { S: 360, A: 245, B: 175 }, secret: { S: 420, A: 320, B: 215 }, topsecret: { S: 490, A: 370, B: 265 }, challenge: { S: 490, A: 370, B: 265 } },
+    ratingThresholdsWan: { normal: { S: 360, A: 245, B: 170 }, secret: { S: 450, A: 340, B: 235 }, topsecret: { S: 520, A: 405, B: 305 }, challenge: { S: 520, A: 405, B: 305 } },
   },
   B: {
     id: 'B', label: 'B 稀有', desc: '大金稀有，晒图有面',
     tierWeights: { 0: 0.32, 1: 0.32, 2: 0.21, 3: 0.095, 4: 0.04, 5: 0.015 },
-    ratingThresholdsWan: { normal: { S: 200, A: 115, B: 38 }, secret: { S: 225, A: 160, B: 56 }, topsecret: { S: 270, A: 195, B: 85 }, challenge: { S: 270, A: 195, B: 85 } },
+    ratingThresholdsWan: { normal: { S: 200, A: 115, B: 40 }, secret: { S: 235, A: 170, B: 60 }, topsecret: { S: 280, A: 200, B: 90 }, challenge: { S: 280, A: 200, B: 90 } },
   },
 };
 const DEFAULT_CONFIG = 'B';
@@ -467,10 +467,10 @@ const DEFAULT_CONFIG = 'B';
 // 仓库难度：weightMult 放大紫/金/红（公式同深度梯度），alertMin/Max 为本仓震动增量区间
 // 2026-10-30 难度模拟定版（ADR-019）：珍品仓震动由暂定 +6~9 校准为 +7~9，其余两仓暂定值验证通过转正
 const WAREHOUSES = [
-  { id: 'normal', name: '普通仓', tag: '社区旧仓 · 堆得还算稳', weightMult: 1, alertMin: 5, alertMax: 8, hint: '堆得不算高，货色一般' },
-  { id: 'secret', name: '精品仓', tag: '精品库房 · 堆得更高', weightMult: 1.6, alertMin: 6, alertMax: 9, hint: '好货明显变多，震动也涨得快' },
-  { id: 'topsecret', name: '珍品仓', tag: '珍品库房 · 堆到了天花板', weightMult: 2.4, alertMin: 8, alertMax: 10, hint: '大金扎堆，震动蹿得最快' },
-  { id: 'challenge', name: '挑战仓', tag: '深夜挑战库 · 只认仓币', weightMult: 2.4, alertMin: 8, alertMax: 10, hint: '票价 200 仓币，出货率直接按爽局算，不看广告；最佳纪录不认' },
+  { id: 'normal', coinMult: 0.2, name: '普通仓', tag: '社区旧仓 · 堆得还算稳', weightMult: 1, alertMin: 5, alertMax: 8, hint: '堆得不算高，货色一般' },
+  { id: 'secret', coinMult: 0.4, name: '精品仓', tag: '精品库房 · 堆得更高', weightMult: 2.0, alertMin: 6, alertMax: 9, hint: '好货明显变多，震动也涨得快' },
+  { id: 'topsecret', coinMult: 1.0, name: '珍品仓', tag: '珍品库房 · 堆到了天花板', weightMult: 3.0, alertMin: 8, alertMax: 10, hint: '大金扎堆，震动蹿得最快' },
+  { id: 'challenge', coinMult: 1.3, name: '挑战仓', tag: '深夜挑战库 · 只认仓币', weightMult: 3.0, alertMin: 8, alertMax: 10, hint: '大金堆成山，钱包先过秤' },
 ];
 
 // 把紫/金/红权重乘以 mult，增加量从白/绿按原比例扣除，蓝不变，结果归一
@@ -497,7 +497,7 @@ function depthNameAt(opens) {
 // M3 经济系统（设计案 v0.2 冻结，ADR-025）：仓币折算/入场费/道具/连锁
 const ECONOMY = {
   rateBands: [[0.05, 0.2], [0.25, 0.5], [0.55, 1.0], [Infinity, 1.5]], // 对未取整 R 查表
-  entryFees: { normal: 0, secret: 25, topsecret: 60, challenge: 200 },
+  entryFees: { normal: 0, secret: 30, topsecret: 80, challenge: 200 },
   shop: {
     smoke: { price: 30, name: '减震垫', desc: '局内使用：震动 −15，每局 1 个', alertCut: 15 },
     expand: { price: 40, name: '扩容贴', desc: '本局背包 +2 格（20→22）', cells: 2 },
@@ -560,7 +560,7 @@ function pickWeighted(rnd, obj) {
 }
 
 /* ===== src/items.js ===== */
-// 物品表 v0.3：一期 40 件（白10/绿10/蓝8/紫6/金4/红2），全原创命名
+// 物品表 v0.4：80 件（白20/绿20/蓝16/紫12/金8/红4），全原创命名（ADR-040 每档翻倍）
 // schema: id/name/desc/tier(0-5)/icon/weight(仅同档池内权重) + 可选 valueMin/valueMax/sizeDist 覆写
 // 预留字段 setId/series/flavor 一期不填不开发（二期图鉴用）
 const ITEMS = [
@@ -610,11 +610,58 @@ const ITEMS = [
   // 红 · 大金 ×2
   { id: 'itm_039', name: '馆藏级怀表', desc: '据说上过拍卖图录', tier: 5, icon: '🕰️', weight: 1, setId: 'set_time' },
   { id: 'itm_040', name: '孤品邮票套', desc: '整套存世不过十套', tier: 5, icon: '✉️', weight: 1, setId: 'set_paper' },
+  // —— ADR-040 扩充：每档翻倍 +40 件（套装各 +2） ——
+  // 白 · 粗货 +10
+  { id: 'itm_041', name: '旧拖鞋', desc: '左脚那只不知所踪', tier: 0, icon: '🩴', weight: 1 },
+  { id: 'itm_042', name: '缺角瓷碗', desc: '盛过几代人的饭', tier: 0, icon: '🍚', weight: 1 },
+  { id: 'itm_043', name: '老蒲扇', desc: '扇面上写着心静自然凉', tier: 0, icon: '🪭', weight: 1 },
+  { id: 'itm_044', name: '老式秤砣', desc: '沉甸甸，压手', tier: 0, icon: '⚖️', weight: 1 },
+  { id: 'itm_045', name: '旧棉被', desc: '压箱底十几年的棉花胎', tier: 0, icon: '📦', weight: 1 },
+  { id: 'itm_046', name: '一次性雨衣', desc: '拆过封，一直没穿', tier: 0, icon: '☔', weight: 1 },
+  { id: 'itm_047', name: '废电池盒', desc: '攒了一盒没电的电池', tier: 0, icon: '🪫', weight: 1 },
+  { id: 'itm_048', name: '旧海报', desc: '卷边了，图案还鲜亮', tier: 0, icon: '🗓️', weight: 1 },
+  { id: 'itm_049', name: '旧搪瓷缸', desc: '缸底印着一个奖字', tier: 0, icon: '☕', weight: 1 },
+  { id: 'itm_050', name: '旧练习册', desc: '写满了，又撕掉大半', tier: 0, icon: '📓', weight: 1, setId: 'set_paper' },
+  // 绿 · 良品 +10
+  { id: 'itm_051', name: '加湿器', desc: '出雾细得像云', tier: 1, icon: '💨', weight: 1 },
+  { id: 'itm_052', name: '电动牙刷套', desc: '刷头都还没拆封', tier: 1, icon: '🪥', weight: 1 },
+  { id: 'itm_053', name: '便携榨汁杯', desc: '碎冰打得碎', tier: 1, icon: '🥤', weight: 1 },
+  { id: 'itm_054', name: '露营灯', desc: '亮度顶格，续航一整夜', tier: 1, icon: '🔦', weight: 1, setId: 'set_elec' },
+  { id: 'itm_055', name: '电热毯', desc: '冬天全靠它续命', tier: 1, icon: '🛌', weight: 1 },
+  { id: 'itm_056', name: '扫地机器人', desc: '建图还挺聪明', tier: 1, icon: '🤖', weight: 1, setId: 'set_elec' },
+  { id: 'itm_057', name: '空气炸锅', desc: '烤红薯绝了', tier: 1, icon: '🍟', weight: 1 },
+  { id: 'itm_058', name: '挂烫机', desc: '衬衫三分钟平整', tier: 1, icon: '👔', weight: 1 },
+  { id: 'itm_059', name: '保温饭盒', desc: '三层，装得下两顿', tier: 1, icon: '🍱', weight: 1 },
+  { id: 'itm_060', name: '瑜伽垫套装', desc: '绑带泡沫轴一整套', tier: 1, icon: '🧘', weight: 1 },
+  // 蓝 · 稀有 +8
+  { id: 'itm_061', name: '星空投影仪', desc: '满屋都是星星', tier: 2, icon: '🌌', weight: 1, setId: 'set_optic' },
+  { id: 'itm_062', name: '老式幻灯机', desc: '放的是几十年前的片子', tier: 2, icon: '🎞️', weight: 1, setId: 'set_optic' },
+  { id: 'itm_063', name: '锡制茶罐', desc: '密封极好，茶香不散', tier: 2, icon: '🫙', weight: 1, setId: 'set_tea' },
+  { id: 'itm_064', name: '老地图册', desc: '有些地名现在已经没有了', tier: 2, icon: '🗺️', weight: 1, setId: 'set_paper' },
+  { id: 'itm_065', name: '皮质相机包', desc: '真皮，越用越亮', tier: 2, icon: '👜', weight: 1 },
+  { id: 'itm_066', name: '老式电话机', desc: '拨盘转起来咔咔响', tier: 2, icon: '☎️', weight: 1 },
+  { id: 'itm_067', name: '羽毛球拍套', desc: '拍线紧，手胶新换的', tier: 2, icon: '🏸', weight: 1 },
+  { id: 'itm_068', name: '铸铁珐琅锅', desc: '炖啥都香，沉是真沉', tier: 2, icon: '🍲', weight: 1 },
+  // 紫 · 史诗 +6
+  { id: 'itm_069', name: '沙漏计时器', desc: '一漏正好一炷香', tier: 3, icon: '⏳', weight: 1, setId: 'set_time' },
+  { id: 'itm_070', name: '景泰蓝花瓶', desc: '掐丝细密，釉面温润', tier: 3, icon: '⚱️', weight: 1, setId: 'set_curio' },
+  { id: 'itm_071', name: '老山参礼盒', desc: '须芦俱全，年头不浅', tier: 3, icon: '🎁', weight: 1 },
+  { id: 'itm_072', name: '连环画全套', desc: '一整套，一本不缺', tier: 3, icon: '📖', weight: 1 },
+  { id: 'itm_073', name: '蓝宝石袖扣', desc: '镶嵌牢固，火彩干净', tier: 3, icon: '💠', weight: 1 },
+  { id: 'itm_074', name: '洞藏老酒', desc: '坛口封泥完整', tier: 3, icon: '🥃', weight: 1, setId: 'set_tea' },
+  // 金 · 传说 +4
+  { id: 'itm_075', name: '计时码表', desc: '三眼计时，走时精准', tier: 4, icon: '⏱️', weight: 1, setId: 'set_time' },
+  { id: 'itm_076', name: '翡翠手镯', desc: '圈口正，种水老', tier: 4, icon: '🟢', weight: 1, setId: 'set_curio' },
+  { id: 'itm_077', name: '名家签名吉他', desc: '单板面板，音色温润', tier: 4, icon: '🎸', weight: 1 },
+  { id: 'itm_078', name: '和田玉印章料', desc: '玉质油润，印文未刻', tier: 4, icon: '🪨', weight: 1 },
+  // 红 · 大金 +2
+  { id: 'itm_079', name: '绝版黑胶母盘', desc: '录音室母盘，世上仅此一张', tier: 5, icon: '💽', weight: 1 },
+  { id: 'itm_080', name: '月球陨石标本', desc: '真从天上掉下来的石头', tier: 5, icon: '☄️', weight: 1 },
 ];
 
 const ITEMS_BY_TIER = [0, 1, 2, 3, 4, 5].map(t => ITEMS.filter(i => i.tier === t));
 
-// 套装（M2 图鉴）：24 件分 6 套，其余 16 件为散件、照样点亮收集
+// 套装（M2 图鉴）：36 件分 6 套，其余 44 件为散件、照样点亮收集
 const SETS = [
   { id: 'set_time', name: '时计套装', desc: '表与钟的时间线' },
   { id: 'set_optic', name: '光影套装', desc: '镜头与镜片' },
@@ -916,7 +963,7 @@ class Run {
       opens: this.opens, items, hasRed: this.hasRed, seed: this.seed, reveals: this.reveals,
       warehouse: this.warehouse, config: this.config, alert: this.alert,
       // M3 仓币：基数只认原始带出 C（不含早撤加成/广告加成），整仓向下取整一次
-      riskR, coinRate, chainMult, coinsGained: Math.floor(C * coinRate * chainMult), chainLeg: this.chainLeg, runId: this.runId, boosted: this.boosted, boostKind: this.boostKind, adExpanded: this.adExpanded,
+      riskR, coinRate, chainMult, coinsGained: Math.floor(C * coinRate * chainMult * (this.warehouse.coinMult ?? 1)), chainLeg: this.chainLeg, runId: this.runId, boosted: this.boosted, boostKind: this.boostKind, adExpanded: this.adExpanded,
     };
   }
 
@@ -926,7 +973,7 @@ class Run {
       bagValue: this.bagValue(), bagCount: this.bag.length, gross: this.gross,
       pending: this.pending?.name ?? null, seed: this.seed,
       config: this.config.id, warehouse: this.warehouse.id, nextCaughtProb: this.nextCaughtProb(),
-      riskR: 1 - this.surv, smoke: this.smoke, chainLeg: this.chainLeg, bagCapacity: this.bagCapacity, boosted: this.boosted, boostKind: this.boostKind, adExpanded: this.adExpanded, coinsPreview: this.phase === 'over' ? null : Math.floor(this.bagValue() * coinRateAt(1 - this.surv) * chainMultAt(this.chainLeg)),
+      riskR: 1 - this.surv, smoke: this.smoke, chainLeg: this.chainLeg, bagCapacity: this.bagCapacity, boosted: this.boosted, boostKind: this.boostKind, adExpanded: this.adExpanded, coinsPreview: this.phase === 'over' ? null : Math.floor(this.bagValue() * coinRateAt(1 - this.surv) * chainMultAt(this.chainLeg) * (this.warehouse.coinMult ?? 1)),
     };
   }
 }
@@ -1139,8 +1186,8 @@ const ACHIEVEMENTS = [
   { id: 'topsecret_evac', name: '珍品凯旋', desc: '在珍品仓成功带出' },
   { id: 'cleared', name: '整仓搬空', desc: '开满 16 格并带出' },
   { id: 'total_1000', name: '累计千万', desc: '累计成功带出 ≥1000 万' },
-  { id: 'coll_20', name: '图鉴过半', desc: '点亮 20 件图鉴' },
-  { id: 'coll_40', name: '大收藏家', desc: '点亮全部 40 件图鉴' },
+  { id: 'coll_20', name: '图鉴过半', desc: '点亮一半图鉴' },
+  { id: 'coll_40', name: '大收藏家', desc: '点亮全部图鉴' },
   { id: 'set_1', name: '成套了', desc: '集齐任意一个套装' },
 ];
 
@@ -1186,7 +1233,7 @@ function recordResult(save, result) {
     topsecret_evac: result.outcome !== 'caught' && result.warehouse.id === 'topsecret',
     cleared: result.outcome === 'cleared',
     total_1000: save.totalCarried >= 1000,
-    coll_20: lit >= 20,
+    coll_20: lit >= Math.ceil(ITEMS.length / 2),
     coll_40: lit >= ITEMS.length,
     set_1: setDone,
   };
