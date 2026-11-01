@@ -237,6 +237,11 @@ body.police { animation: police .16s steps(1) 6; }
 .intel-item { text-align: left; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; color: var(--text); cursor: pointer; font-size: 15px; }
 .intel-item:active { border-color: var(--hazard); }
 
+/* 开始页更新公告（每次更新换文案） */
+.title-notice { text-align: left; background: rgba(20, 24, 16, .82); border: 1px solid rgba(255, 210, 77, .45); border-radius: 12px; padding: 10px 14px; margin: 14px auto 4px; max-width: 330px; }
+.title-notice p { margin: 3px 0; font-size: 13px; line-height: 1.5; color: var(--text); }
+.title-notice .tn-head { color: #ffd24d; font-weight: 700; font-size: 14px; margin-bottom: 5px; }
+
 </style>
 </head>
 <body>
@@ -264,6 +269,15 @@ body.police { animation: police .16s steps(1) 6; }
       <h1 class="logo title-logo">大金撤离</h1>
       <p class="subtitle title-sub">再 贪 一 格</p>
       <p class="tagline">包里越来越满，货架越晃越凶。<br>下一格是翻倍，还是轰隆一声全压坏？</p>
+      <!-- 更新公告：每次版本更新必须换新（主人立规 2026-11-01）；只写让人想玩的，不写数据 -->
+      <div class="title-notice">
+        <p class="tn-head">📢 更新公告 · 情报站开张</p>
+        <p>🔍 下一格是金还是坑？现在能提前偷看一眼</p>
+        <p>🛟 贪到货架要塌也别慌：减震、连锁护航都备好了</p>
+        <p>🎯 想要哪件就点名哪件，藏宝情报帮你盯着它出</p>
+        <p>📡 只差一件集齐套装？雷达告诉你它在不在这一仓</p>
+        <p>✨ 全场手感再升级：开格更跟手，结算更快</p>
+      </div>
       <button id="btn-title-start" class="btn-primary btn-title">开始游戏</button>
       <button id="btn-title-continue" class="btn-ghost hidden" style="width:100%;margin-top:10px">▶ 继续上局（未结束）</button>
       <button id="btn-title-sound" class="btn-ghost sound-toggle">🔊 音效：开</button>
