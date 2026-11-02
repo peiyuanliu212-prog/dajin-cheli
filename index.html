@@ -166,7 +166,7 @@ body.police { animation: police .16s steps(1) 6; }
 .coll-cell .cc-name { font-size: 11px; display: block; margin-top: 3px; line-height: 1.25; min-height: 28px; }
 .coll-cell .cc-count { position: absolute; top: 3px; right: 6px; font-size: 10px; color: var(--hazard); font-weight: 700; }
 .coll-cell.unlit { opacity: .42; }
-.coll-cell.unlit .cc-icon { filter: grayscale(1); }
+.coll-cell.unlit .cc-icon { opacity: .32; }
 .coll-tier-title { margin: 14px 0 8px; font-size: 14px; }
 .ach-row { display: flex; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; margin-bottom: 8px; background: rgba(255,255,255,.03); }
 .ach-row .ach-icon { font-size: 22px; }
@@ -371,7 +371,7 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
         <p>🌱 新手巅峰：头几把就是巅峰手气，先爽为敬</p>
         <p>💎 瑰宝升级：全 1 格更好装，还能看广告祈福把出率拉高</p>
         <p>🏚 战利品实物入仓、展览柜照常营业：好货带回家摆上柜</p>
-        <p>⚡ 开格大提速：翻找不再等，连点连开才够爽</p>
+        <p>🎞 画面大优化：动画滑动更顺滑，不再掉帧</p>
         <p>📺 广告奖励更稳了：看完广告哪怕页面刷新，奖励也会自动补发到账</p>
       </div>
       <button id="btn-title-start" class="btn-primary btn-title">开始游戏</button>
@@ -1971,7 +1971,7 @@ const Sfx = {
 const params = new URLSearchParams(location.search);
 const FAST = params.get('fast') === '1';
 const SEED_PARAM = params.get('seed') ? Number(params.get('seed')) : null;
-const REVEAL_MS = [130, 170, 240, 340, 520, 800, 2400]; // ADR-051 节奏提速（狂欢版手感）：原 ADR-020 的 550–2100ms 被玩家反馈「卡」——低档近瞬开、高档留分量、瑰宝 2.4s 不动
+const REVEAL_MS = [550, 700, 900, 1200, 1600, 2100, 2400]; // 开格等待＝揭晓前的爽感（ADR-020 定版；ADR-051 曾提速、ADR-053 按主人纠正恢复原值——手感参数是设计不是 bug）
 const $ = id => document.getElementById(id);
 
 let save = loadSave();
