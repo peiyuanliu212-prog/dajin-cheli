@@ -1853,9 +1853,9 @@ function drawShareCard(canvas, result, opts = {}) {
   if (hasUltra) {
     ctx.save();
     ctx.shadowColor = 'rgba(126,231,255,0.9)'; ctx.shadowBlur = 22;
-    put('💎 瑰 宝 现 世 💎', 360, 268, 'bold 30px sans-serif', '#7ee7ff', 'center');
+    put('💎 瑰 宝 现 世 💎', 360, 256, 'bold 30px sans-serif', '#7ee7ff', 'center');
     ctx.restore();
-    titleY = 322;
+    titleY = 336;
   }
   if (caught) {
     put('货 架 塌 了', 360, titleY, 'bold 64px sans-serif', '#e5484d', 'center');
@@ -1889,10 +1889,10 @@ function drawShareCard(canvas, result, opts = {}) {
     if (top.tier === 6) {
       ctx.save();
       ctx.shadowColor = 'rgba(126,231,255,0.8)'; ctx.shadowBlur = 16;
-      put(`${top.icon} ${top.name}（${TIER_NAMES[top.tier]}）`, 80, y + 52, 'bold 40px sans-serif', TIER_COLORS[top.tier]);
+      put(`${top.icon} ${top.name}（${TIER_NAMES[top.tier]}）`, 80, y + 48, 'bold 36px sans-serif', TIER_COLORS[top.tier]);
       ctx.restore();
-      put(`${fmtWan(top.value)} 万`, 640, y + 52, 'bold 40px sans-serif', '#ffd700', 'right');
-      y += 122;
+      put(`估值 ${fmtWan(top.value)} 万`, 80, y + 92, 'bold 30px sans-serif', '#ffd700');
+      y += 138;
     } else {
       put(`${top.icon} ${top.name}（${TIER_NAMES[top.tier]}）`, 80, y + 46, 'bold 34px sans-serif', TIER_COLORS[top.tier]);
       put(`${fmtWan(top.value)} 万`, 640, y + 46, 'bold 34px sans-serif', '#e8e6da', 'right');
