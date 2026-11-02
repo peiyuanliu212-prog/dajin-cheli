@@ -313,6 +313,19 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
 .cabinet-tags { color: #ffd24d; font-size: 13px; font-weight: 700; margin-top: 4px; }
 .cab-grid { grid-template-columns: repeat(6, 1fr); }
 
+/* 排行榜（ADR-048） */
+.board-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+.board-tabs .active { border-color: var(--tier-gold); color: var(--tier-gold); }
+.board-row { display: flex; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; background: rgba(255,255,255,.03); }
+.board-row.me { border-color: var(--tier-gold); background: rgba(245,185,33,.08); }
+.board-rank { font-weight: 800; font-size: 16px; min-width: 26px; text-align: center; color: var(--tier-gold); }
+.board-ava { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; }
+.board-mid { flex: 1; min-width: 0; }
+.board-name { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board-item { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board-score { font-weight: 800; font-size: 15px; }
+.board-note { color: var(--muted); font-size: 13px; padding: 10px 2px; }
+
 </style>
 </head>
 <body>
@@ -340,12 +353,12 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
       <p class="tagline">包里越来越满，货架越晃越凶。<br>下一格是翻倍，还是轰隆一声全压坏？</p>
       <!-- 更新公告：每次版本更新必须换新（主人立规 2026-11-01）；只写让人想玩的，不写数据 -->
       <div class="title-notice">
-        <p class="tn-head">📢 更新公告 · 仓库开张</p>
-        <p>🏚 战利品全是实物了：带出的宝贝躺进你的仓库，亲手卖才变现</p>
-        <p>🖼 展览柜开张：好货摆出来炫，身价越攒越有面儿</p>
-        <p>💎 两件镇馆瑰宝悄悄进了货架——摸到就是封神局</p>
-        <p>🔒 塌架保住的宝贝不再蒸发：作纪念品入仓，能看还能展</p>
-        <p>📖 图鉴改规矩：真带回家的才点亮，集齐更有含金量</p>
+        <p class="tn-head">📢 更新公告 · 狂欢版</p>
+        <p>🔥 超级爽局登场：爽局之上再拉一档，出货直接拉满</p>
+        <p>👑 排行榜开榜：谁出的货最贵，摆出来一起比</p>
+        <p>🌱 新手巅峰：头几把就是巅峰手气，先爽为敬</p>
+        <p>💎 镇馆瑰宝更容易现世了——摸到就是封神局</p>
+        <p>🏚 战利品实物入仓、展览柜照常营业：好货带回家摆上柜</p>
         <p>📺 广告奖励更稳了：看完广告哪怕页面刷新，奖励也会自动补发到账</p>
       </div>
       <button id="btn-title-start" class="btn-primary btn-title">开始游戏</button>
@@ -381,6 +394,7 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
       <button id="btn-nav-collection" class="btn-ghost">📖 图鉴 <span id="nav-coll-count"></span></button>
       <button id="btn-nav-ach" class="btn-ghost">🏆 成就 <span id="nav-ach-count"></span></button>
       <button id="btn-nav-history" class="btn-ghost">📜 战绩</button>
+      <button id="btn-nav-board" class="btn-ghost">👑 排行榜</button>
     </div>
     <button id="btn-sound-home" class="btn-ghost sound-toggle">🔊 音效：开</button>
     <button id="btn-desktop" class="btn-ghost hidden">📲 添加到桌面</button>
@@ -527,6 +541,17 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
     <button class="btn-ghost back-home">← 返回</button>
   </section>
 
+  <section id="screen-board" class="screen">
+    <h2 class="screen-title">👑 排行榜</h2>
+    <p class="screen-sub" id="board-mine"></p>
+    <div class="board-tabs">
+      <button id="board-tab-item" class="btn-ghost active">💎 单件最贵</button>
+      <button id="board-tab-run" class="btn-ghost">🎒 单局带出</button>
+    </div>
+    <div id="board-body"></div>
+    <button class="btn-ghost back-home">← 返回</button>
+  </section>
+
   <div id="vignette"></div>
   <div id="loot-pop" class="hidden"><div id="loot-pop-inner"></div></div>
 </div>
@@ -610,14 +635,20 @@ const TIER_KEYS = ['white', 'green', 'blue', 'purple', 'gold', 'red'];
 const CONFIGS = {
   A: {
     id: 'A', label: 'A 爽局', desc: '出货率高，爽感直接',
-    tierWeights: { 0: 0.2082, 1: 0.25, 2: 0.23, 3: 0.13, 4: 0.10, 5: 0.08, 6: 0.0018 }, // v1.1 瑰宝档（A，cal 见 tools/ultra-cal.mjs）
+    tierWeights: { 0: 0.207, 1: 0.25, 2: 0.23, 3: 0.13, 4: 0.10, 5: 0.08, 6: 0.003 }, // 狂欢版 ADR-048：瑰宝 0.0018→0.003（cal 见 tools/carnival-cal.mjs，A 普通见瑰宝 4.82%）
     // 评级线按仓分线（ADR-027 定版）：各仓带出分位 p92/p75/p50，S≈8%/仓
     ratingThresholdsWan: { normal: { S: 360, A: 245, B: 170 }, secret: { S: 450, A: 340, B: 235 }, topsecret: { S: 520, A: 405, B: 305 }, challenge: { S: 520, A: 405, B: 305 } },
   },
   B: {
     id: 'B', label: 'B 稀有', desc: '大金稀有，晒图有面',
-    tierWeights: { 0: 0.31875, 1: 0.32, 2: 0.21, 3: 0.095, 4: 0.04, 5: 0.015, 6: 0.00125 }, // v1.1 瑰宝档（B，cal 实测普通仓约 2%/局）
+    tierWeights: { 0: 0.318, 1: 0.32, 2: 0.21, 3: 0.095, 4: 0.04, 5: 0.015, 6: 0.002 }, // 狂欢版 ADR-048：瑰宝 0.00125→0.002（B 普通见瑰宝 3.26%）
     ratingThresholdsWan: { normal: { S: 200, A: 115, B: 40 }, secret: { S: 235, A: 170, B: 60 }, topsecret: { S: 280, A: 200, B: 90 }, challenge: { S: 280, A: 200, B: 90 } },
+  },
+  // 狂欢版 ADR-048：超级爽局（爽局之上再看一支广告升级，一趟共 2 支；每日≤2 趟）。评级线沿用 A 线（更容易拿 S，符合狂欢口径）
+  S: {
+    id: 'S', label: 'S 超级爽局', desc: '出红拉满，瑰宝翻倍',
+    tierWeights: { 0: 0.1664, 1: 0.22, 2: 0.22, 3: 0.15, 4: 0.12, 5: 0.12, 6: 0.0036 }, // cal：普通出红 88.5%·见瑰宝 5.74%·带出 238 万（tools/carnival-cal.mjs）
+    ratingThresholdsWan: { normal: { S: 360, A: 245, B: 170 }, secret: { S: 450, A: 340, B: 235 }, topsecret: { S: 520, A: 405, B: 305 }, challenge: { S: 520, A: 405, B: 305 } },
   },
 };
 const DEFAULT_CONFIG = 'B';
@@ -664,7 +695,7 @@ const ECONOMY = {
   chainMult: [1, 1.15, 1.25, 1.3], // 按连锁仓序（1 起），第 4 仓起封顶
   achievementCoin: 20, collectorCoin: 300, // v1.1：全图鉴成就单独加码 300
   setCoin: 100,
-  ads: { supplyCoins: 40, coinBonusRate: 0.5, coinBonusCap: 40, expandCells: 4, recoveryCompCoins: 30, shockDrop: 20, shockFloor: 85, intelWeightMult: 6, gapMax: 30, sellBonusRate: 0.25 }, // ADR-032 广告位参数
+  ads: { supplyCoins: 40, coinBonusRate: 0.5, coinBonusCap: 40, expandCells: 4, recoveryCompCoins: 30, shockDrop: 20, shockFloor: 85, intelWeightMult: 6, gapMax: 30, sellBonusRate: 0.25, superDailyCap: 2 }, // ADR-032 广告位参数；superDailyCap 为 ADR-048 超级爽局每日趟数上限
 };
 function coinRateAt(R) {
   for (const [t, r] of ECONOMY.rateBands) if (R < t) return r;
@@ -1299,6 +1330,59 @@ async function addToDesktop() {
   return { state: 'silent', message: '' }; // 其他平台/回调为空：保持静默
 }
 
+// ---------- 排行榜（act-cloudbase 网关，ADR-048；模式同《反应天梯》已上线实现） ----------
+// 请求必须走 ColorboxAI.cloud.request（容器注入登录身份，裸 fetch 拿不到凭据）；
+// API_BASE 带 /api 前缀（网关路由口径，缺前缀会 404——反应天梯 v1.2.2 教训）。
+const ACTIVITY_API_BASE = 'https://app-818269c497-d5gtys63t5821f301-1252166086.ap-shanghai.app.tcloudbase.com/api';
+const ACTIVITY_ENV_ID = 'app-818269c497-d5gtys63t5821f301';
+
+function lbAvailable() {
+  const cb = CB();
+  return !!(cb && cb.cloud && typeof cb.cloud.request === 'function' && typeof cb.cloud.auth === 'function');
+}
+
+let lbAuthed = false;
+async function lbAuth() {
+  if (lbAuthed) return;
+  const r = await CB().cloud.auth({ envId: ACTIVITY_ENV_ID });
+  if (!r || (r.code !== 200 && r.code !== 0)) throw new Error((r && r.message) || '请先登录');
+  lbAuthed = true;
+}
+
+async function lbRequest(path, data) {
+  await lbAuth();
+  const resp = await CB().cloud.request({ url: ACTIVITY_API_BASE + path, method: data ? 'POST' : 'GET', data, envId: ACTIVITY_ENV_ID, auth: true });
+  if (!resp || resp.statusCode === 401) throw new Error('请先登录');
+  if (resp.statusCode !== 200 || resp.code !== 0) throw new Error((resp && resp.message) || '榜单服务异常');
+  return resp.data;
+}
+
+let profileCache = null;
+async function fetchUserProfile() {
+  if (profileCache) return profileCache;
+  const cb = CB();
+  if (!cb || typeof cb.auth?.getUserInfo !== 'function') return null;
+  try {
+    const r = await cb.auth.getUserInfo();
+    if (r && r.code === 200 && r.data) {
+      const av = r.data.avatar || r.data.userHeadUrl;
+      profileCache = {
+        nickname: r.data.nickname ? String(r.data.nickname).slice(0, 40) : '虎扑用户',
+        avatar: typeof av === 'string' && /^https?:\/\//.test(av) && av.length <= 512 ? av : null,
+      };
+      return profileCache;
+    }
+  } catch { /* 取不到就用默认名无头像提交 */ }
+  return { nickname: '虎扑用户', avatar: null };
+}
+
+async function lbSubmitScore(board, score, dims) {
+  const p = await fetchUserProfile();
+  return lbRequest('/leaderboard/submit', { board, score, dims: dims || undefined, displayName: p?.nickname, avatar: p?.avatar || undefined });
+}
+function lbFetchBoard(board) { return lbRequest('/leaderboard?board=' + encodeURIComponent(board)); }
+function lbFetchMine(board) { return lbRequest('/leaderboard/me?board=' + encodeURIComponent(board)); }
+
 // ---------- 全屏顶部安全适配（colorbox-fullscreen-safe-top 规范，ADR-033） ----------
 // 规范口径：初始化后调用 getFullscreenSafeTop()（同步、无参、CSS px、取不到为 0），
 // 同一内容只避让一次。本实现把安全距写入全局 CSS 变量 --safe-top，
@@ -1333,7 +1417,9 @@ const DEFAULTS = {
   coinsEarned: 0, coinsSpent: 0, setsRewarded: [], lastRunId: null,
   lastSupplyDay: null, lastAdCoinRunId: null, lastAdClaimTs: null, // ADR-032：每日补给日期 / 结算广告加成与补发幂等
   lastIntelDay: null, lastGapDay: null, // ADR-041：藏宝情报 / 门票差额补齐的日期计数
+  lastSuperDay: null, superCount: 0, // ADR-048：超级爽局每日趟数计数
   stash: [], cabinet: [], cabinetSlots: 8, // v1.1 仓库系统：战利品实例 / 展柜 uid 列表 / 已解锁展位数
+  lbBest: {}, // ADR-048 排行榜：本地各榜最佳（score=估值×10 整数），仅刷新时才向云端提交
   sellBonusArmed: false, lastSellBonusDay: null, // v1.1：出售加成（下一次出售 +25%）与日期计数
 };
 
@@ -1832,6 +1918,9 @@ let lastHistEntry = null; // 本局刚写入的战绩条目（救援后同步其
 let chainNextLeg = 1;   // M3 连锁：下一局的仓序（会话内有效，刷新即断链）
 let shopCtx = null;     // M3 局前商店上下文
 let boostChain = false; // 广告爽局（ADR-026）：本趟出击是否已激活爽局（连锁整趟有效，塌架/新出击重置）
+let superChain = false; // 超级爽局（ADR-048）：本趟是否已升级 S 配置（在爽局之上，连锁整趟有效）
+let superCredit = false; // 超级爽局广告重载补发的额度（供下趟出击，消费一次；含爽局）
+let newbieChain = false; // 新手巅峰（ADR-048）：存档前 3 局整趟按 A 配置（boostKind='newbie'）
 let shockOfferDone = false; // 局内减震（ADR-041）：本趟是否已弹出过减震询问（接受/拒绝都不再弹）
 let intelChain = null;      // 藏宝情报（ADR-041）：本趟锁定的目标 {id, name}，与爽局互斥
 let intelCredit = null;     // 情报广告重载补发的额度（供下趟出击，消费一次）
@@ -2000,6 +2089,7 @@ function handleAdRecovery() {
     if (save.lastAdClaimTs === rec.ts) return;
     save.lastAdClaimTs = rec.ts;
     if (rec.type === 'boost') { boostCredit = true; storeSave(save); return; }
+    if (rec.type === 'super') { superCredit = true; boostCredit = true; storeSave(save); return; }
     if (rec.type === 'supply') {
       if (save.lastSupplyDay !== todayStr()) { save.lastSupplyDay = todayStr(); creditCoins(ECONOMY.ads.supplyCoins); $('supply-note').textContent = `📺 广告补给已补发 +${ECONOMY.ads.supplyCoins} 🪙`; }
       else storeSave(save);
@@ -2072,6 +2162,11 @@ function openShop(warehouse) {
   renderShop();
 }
 function boostActiveHere() { return !!(shopCtx?.boostWatched || boostCredit || (chainNextLeg > 1 && boostChain)); }
+function superActiveHere() { return !!(shopCtx?.superWatched || superCredit || (chainNextLeg > 1 && superChain)); }
+function superUsedToday() { return save.lastSuperDay === todayStr() ? (save.superCount ?? 0) : 0; }
+function boostTag(kind) { return kind === 'paid' ? '🎟 挑战仓' : kind === 'super' ? '🔥 超级爽局' : kind === 'newbie' ? '🌱 新手巅峰' : '📺 爽局'; }
+function boostTagBare(kind) { return kind === 'paid' ? '🎟挑战仓' : kind === 'super' ? '🔥超级爽局' : kind === 'newbie' ? '🌱新手巅峰' : '📺广告爽局'; }
+function boostTagShort(kind) { return kind === 'paid' ? '🎟挑战' : kind === 'super' ? '🔥超爽' : kind === 'newbie' ? '🌱巅峰' : '📺爽局'; }
 
 // 藏宝情报选目标（ADR-041）：未点亮、金档及以下，按档分组列出
 function openIntelPicker() {
@@ -2129,6 +2224,38 @@ function renderShop() {
       b.dataset.boost = '1';
       b.append(wrap, mk('b', null, '免费'));
       shopBody.append(b);
+    }
+  }
+  if (warehouse.id !== 'challenge') { // 超级爽局（ADR-048）：爽局之上再看一支升级 S 配置，每日 ≤superDailyCap 趟
+    const wrap = mk('span');
+    const superOn = superActiveHere();
+    const intelLocked = !!(intelChain ?? shopCtx?.intelTarget);
+    if (superOn) {
+      wrap.append(mk('span', 'sr-name', '🔥 超级爽局生效中'), mk('span', 'sr-desc', '本趟出货率拉到顶（出红概率 12%·瑰宝翻倍），连锁整趟有效'));
+      const d = mk('div', 'shop-row sel boost');
+      d.append(wrap, mk('b', null, '✓'));
+      shopBody.append(d);
+    } else if (intelLocked) {
+      wrap.append(mk('span', 'sr-name', '🔥 超级爽局'), mk('span', 'sr-desc', '本趟已选藏宝情报，与爽局二选一'));
+      const d = mk('div', 'shop-row');
+      d.append(wrap, mk('b', null, '—'));
+      shopBody.append(d);
+    } else if (superUsedToday() >= ECONOMY.ads.superDailyCap) {
+      wrap.append(mk('span', 'sr-name', '🔥 超级爽局'), mk('span', 'sr-desc', `今日 ${ECONOMY.ads.superDailyCap} 趟超级爽局已用完，明天再来`));
+      const d = mk('div', 'shop-row');
+      d.append(wrap, mk('b', null, '—'));
+      shopBody.append(d);
+    } else if (boostOn) {
+      wrap.append(mk('span', 'sr-name', '🔥 再看一支 · 升级超级爽局'), mk('span', 'sr-desc', '爽局之上再拉一档：出红概率 8%→12%、瑰宝翻倍，连锁整趟有效'));
+      const b = mk('button', 'shop-row boost');
+      b.dataset.super = '1';
+      b.append(wrap, mk('b', null, '免费'));
+      shopBody.append(b);
+    } else {
+      wrap.append(mk('span', 'sr-name', '🔥 超级爽局'), mk('span', 'sr-desc', '先激活爽局再升级：出红概率拉到 12%、瑰宝翻倍——上面还有更狠的'));
+      const d = mk('div', 'shop-row');
+      d.append(wrap, mk('b', null, '—'));
+      shopBody.append(d);
     }
   }
   { // 藏宝情报（ADR-041）：与爽局互斥、每日 1 次
@@ -2189,6 +2316,15 @@ function renderShop() {
     if (r.granted) { shopCtx.boostWatched = true; renderShop(); $('shop-note').textContent = r.simulated ? '爽局已激活：本趟出击出货率升级！（试玩版模拟广告）' : '爽局已激活：本趟出击出货率升级！'; }
     else { boostBtn.disabled = false; $('shop-note').textContent = r.message || '广告未看完，爽局未生效。'; }
   });
+  const superBtn = document.querySelector('[data-super]');
+  if (superBtn) superBtn.addEventListener('click', async () => {
+    superBtn.disabled = true;
+    $('shop-note').textContent = '广告播放中…';
+    const r = await Ads.watch('super');
+    if (r.simulated && !FAST) await delay(900);
+    if (r.granted) { shopCtx.superWatched = true; renderShop(); $('shop-note').textContent = r.simulated ? '超级爽局已激活：本趟出货率拉到顶！（试玩版模拟广告）' : '超级爽局已激活：本趟出货率拉到顶！'; }
+    else { superBtn.disabled = false; $('shop-note').textContent = r.message || '广告未看完，超级爽局未生效。'; }
+  });
   document.querySelectorAll('.shop-row').forEach(r => r.addEventListener('click', () => {
     const key = r.dataset.item;
     if (!key) return; // 广告行（爽局/情报/差额）有各自的处理器，不进道具集
@@ -2234,6 +2370,7 @@ $('btn-shop-go').addEventListener('click', () => {
     bought.push(key);
   }
   const boostNow = boostActiveHere();
+  const superNow = superActiveHere();
   const intelNow = shopCtx?.intelTarget ?? null;
   $('shop-modal').classList.add('hidden');
   shopCtx = null;
@@ -2243,21 +2380,29 @@ $('btn-shop-go').addEventListener('click', () => {
     dualInsurance: items.has('dualins'),
     smokeBombs: items.has('smoke') ? 1 : 0,
     boostNow,
+    superNow,
     intelNow,
   });
 });
 
 // ---------- 开局与局内渲染 ----------
 function startRun(warehouse, opts = {}) {
-  const { boostNow = false, intelNow = null, ...runOpts } = opts;
+  const { boostNow = false, superNow = false, intelNow = null, ...runOpts } = opts;
   const seed = SEED_PARAM ?? Math.floor(Math.random() * 90000000) + 10000000;
   const leg = chainNextLeg; chainNextLeg = 1;
-  if (leg === 1) { boostChain = boostNow || boostCredit; boostCredit = false; shockOfferDone = false; intelChain = intelNow || intelCredit; intelCredit = null; } // 新出击：商店激活或重载补发额度
-  else { if (boostNow) boostChain = true; if (intelNow) intelChain = intelNow; }              // 连锁中途补看广告，整趟生效
+  if (leg === 1) { // 新出击：商店激活或重载补发额度
+    boostChain = boostNow || boostCredit; boostCredit = false;
+    superChain = superNow || superCredit; superCredit = false;
+    if (superChain) boostChain = true;
+    shockOfferDone = false; intelChain = intelNow || intelCredit; intelCredit = null;
+    newbieChain = !boostChain && warehouse.id !== 'challenge' && (save.runs ?? 0) < 3; // 新手巅峰：存档前 3 局整趟 A 配置
+    if (superChain) { const t = todayStr(); if (save.lastSuperDay !== t) { save.lastSuperDay = t; save.superCount = 0; } save.superCount = (save.superCount ?? 0) + 1; storeSave(save); }
+  }
+  else { if (boostNow) boostChain = true; if (superNow) superChain = true; if (intelNow) intelChain = intelNow; } // 连锁中途补看广告，整趟生效
   const paidBoost = warehouse.id === 'challenge';
-  const boosted = boostChain || paidBoost;
-  const boostKind = paidBoost && !boostChain ? 'paid' : (boosted ? 'ad' : null);
-  run = new Run({ config: boosted ? CONFIGS.A : CONFIGS.B, warehouse, seed, chainLeg: leg, boosted, boostKind, intelTargetId: intelChain?.id ?? null, ...runOpts });
+  const boosted = boostChain || paidBoost || newbieChain;
+  const boostKind = superChain ? 'super' : paidBoost && !boostChain ? 'paid' : boostChain ? 'ad' : newbieChain ? 'newbie' : null;
+  run = new Run({ config: superChain ? CONFIGS.S : boosted ? CONFIGS.A : CONFIGS.B, warehouse, seed, chainLeg: leg, boosted, boostKind, intelTargetId: intelChain?.id ?? null, ...runOpts });
   setupRunScreen(warehouse);
   setEvent('点任意一格开始搜。越往深处，好货越多。', false);
 }
@@ -2268,7 +2413,7 @@ function setupRunScreen(warehouse) {
   lastCoins = { run: 0, bonus: 0 };
   discardSel = new Set();
   $('run-seed').textContent = run.seed;
-  $('run-meta').textContent = `${warehouse.name} · ${run.boosted ? (run.boostKind === 'paid' ? '🎟 挑战仓（出货率↑）' : '📺 爽局（出货率↑）') : 'B 稀有'}${run.chainLeg > 1 ? ` · 🔗 连锁第 ${run.chainLeg} 仓` : ''}${run.intelTargetId ? ' · 🔍藏宝情报' : ''}`;
+  $('run-meta').textContent = `${warehouse.name} · ${run.boosted ? `${boostTag(run.boostKind)}（出货率↑）` : 'B 稀有'}${run.chainLeg > 1 ? ` · 🔗 连锁第 ${run.chainLeg} 仓` : ''}${run.intelTargetId ? ' · 🔍藏宝情报' : ''}`;
   $('bag-title').textContent = bagTitleText();
   {
     const cellsEl = $('cells');
@@ -2697,6 +2842,7 @@ function finishToResult(result) {
     lastCoins = { run: rr.runCoins ?? 0, bonus: rr.bonusCoins ?? 0 };
     lastHistEntry = save.history[0] ?? null;
     newSeen = [...new Set((Array.isArray(result.loot) ? result.loot.map(e => e.itemId) : (result.reveals ?? []).map(r => r.itemId)))].filter(id => !before.has(id));
+    maybeSubmitLeaderboard(result);
   }
   lastResultRef = result;
   const body = $('result-body');
@@ -2705,7 +2851,7 @@ function finishToResult(result) {
   const ledgerEl = rows => { const card = mk('div', 'card ledger'); rows.forEach(r => card.append(r)); return card; };
   if (result.outcome === 'caught') {
     body.append(headEl('lose', '货 架 塌 了'));
-    body.append(mk('p', 'result-sub', `${result.warehouse.name} · ${result.boosted ? (result.boostKind === 'paid' ? '🎟挑战仓' : '📺广告爽局') : result.config.label} · 开了 ${result.opens} 格，终局震动 ${result.alert}`));
+    body.append(mk('p', 'result-sub', `${result.warehouse.name} · ${result.boosted ? boostTagBare(result.boostKind) : result.config.label} · 开了 ${result.opens} 格，终局震动 ${result.alert}`));
     const rows = [
       ledgerRow('搜获总值', `${fmtWan(result.G)} 万`),
       ledgerRow('被压坏', `-${fmtWan(result.G - result.I)} 万`),
@@ -2720,7 +2866,7 @@ function finishToResult(result) {
     if (result.rescued) body.append(mk('p', 'top-item', '📺 广告救援：多保住了一件（已计入防震保留）。'));
   } else {
     body.append(headEl('win', result.outcome === 'cleared' ? '整仓搬空' : '带出成功'));
-    body.append(mk('p', 'result-sub', `${result.warehouse.name} · ${result.boosted ? (result.boostKind === 'paid' ? '🎟挑战仓' : '📺广告爽局') : result.config.label} · 开了 ${result.opens} 格 · 震动 ${result.alert}`));
+    body.append(mk('p', 'result-sub', `${result.warehouse.name} · ${result.boosted ? boostTagBare(result.boostKind) : result.config.label} · 开了 ${result.opens} 格 · 震动 ${result.alert}`));
     const stampWrap = mk('div');
     stampWrap.style.textAlign = 'center';
     stampWrap.append(mk('span', `stamp g${result.rating}`, result.rating));
@@ -2866,7 +3012,7 @@ $('btn-post').addEventListener('click', async () => {
     const lines = [
       nick ? `@${nick} 的战绩单` : '我的战绩单',
       caught ? `结果：货架塌了，防震保留 ${fmtWan(result.I)} 万${result.topItem ? `（${result.topItem.name}）` : ''}，仓币 +0` : `结果：成功带出，带出 ${fmtWan(result.C)} 万，评级 ${result.rating}${result.topItem ? `，最贵 ${result.topItem.name}` : ''}，战利品 ${(result.loot ?? []).length} 件已入仓`,
-      result.boosted ? (result.boostKind === 'paid' ? '本局是挑战仓（付费爽局，出货率拉满）' : '本局是广告爽局（出货率拉满）') : '纯 B 正赛局',
+      result.boosted ? (result.boostKind === 'paid' ? '本局是挑战仓（付费爽局，出货率拉满）' : result.boostKind === 'super' ? '本局是超级爽局（出货率拉满）' : result.boostKind === 'newbie' ? '本局是新手巅峰（出货率拉满）' : '本局是广告爽局（出货率拉满）') : '纯 B 正赛局',
       result.chainLeg > 1 ? `连锁第 ${result.chainLeg} 仓` : '',
       '逐格开箱，见好就收还是再贪一格？来《大金撤离：再贪一格》试试手气。',
     ].filter(Boolean);
@@ -2969,6 +3115,69 @@ function renderAchievements() {
     }
   }
 }
+/* ---------- 排行榜（ADR-048 狂欢版）：双榜比"谁出了什么"，爽局照样上榜 ---------- */
+let boardTab = 'item_best';
+function maybeSubmitLeaderboard(result) {
+  try {
+    if (!lbAvailable()) return;
+    save.lbBest = save.lbBest || {};
+    const pending = [];
+    const loot = Array.isArray(result.loot) ? result.loot : [];
+    if (loot.length) {
+      const top = loot.reduce((a, b) => (b.value > a.value ? b : a), loot[0]);
+      const score = Math.round(top.value * 10);
+      if (score > (save.lbBest.item_best || 0)) {
+        save.lbBest.item_best = score; storeSave(save);
+        pending.push(lbSubmitScore('item_best', score, { itemId: top.itemId, itemName: top.name, tier: top.tier }));
+      }
+    }
+    if (result.outcome !== 'caught' && result.C > 0) {
+      const score = Math.round(result.C * 10);
+      if (score > (save.lbBest.run_best || 0)) {
+        save.lbBest.run_best = score; storeSave(save);
+        pending.push(lbSubmitScore('run_best', score, { warehouse: result.warehouse.id, boosted: !!result.boosted, boostKind: result.boostKind ?? null }));
+      }
+    }
+    pending.forEach(p => { if (p && p.catch) p.catch(() => {}); });
+  } catch { /* 提交失败静默：本地最佳已记，下次刷新纪录再试 */ }
+}
+function boardRow(e) {
+  const row = mk('div', 'board-row' + (e.isCurrent ? ' me' : ''));
+  row.append(mk('span', 'board-rank', String(e.rank)));
+  if (e.avatar) {
+    const img = document.createElement('img');
+    img.className = 'board-ava'; img.src = e.avatar; img.alt = ''; img.referrerPolicy = 'no-referrer';
+    img.addEventListener('error', () => img.remove());
+    row.append(img);
+  }
+  const mid = mk('div', 'board-mid');
+  mid.append(mk('div', 'board-name', e.displayName + (e.isCurrent ? '（我）' : '')));
+  if (boardTab === 'item_best' && e.dims?.itemName) mid.append(mk('div', 'board-item', `${TIER_NAMES[e.dims.tier] ?? ''} · ${e.dims.itemName}`));
+  if (boardTab === 'run_best' && e.dims?.warehouse) mid.append(mk('div', 'board-item', `${WAREHOUSES.find(w => w.id === e.dims.warehouse)?.name ?? ''}${e.dims.boosted ? (e.dims.boostKind === 'super' ? ' · 超级爽局' : e.dims.boostKind === 'newbie' ? ' · 新手巅峰' : ' · 爽局') : ''}`));
+  row.append(mid);
+  row.append(mk('span', 'board-score', `${fmtWan(e.score / 10)} 万`));
+  return row;
+}
+async function renderBoard() {
+  $('board-tab-item').classList.toggle('active', boardTab === 'item_best');
+  $('board-tab-run').classList.toggle('active', boardTab === 'run_best');
+  const mine = save.lbBest?.[boardTab] || 0;
+  $('board-mine').textContent = mine ? `我的最佳：${fmtWan(mine / 10)} 万` : '我还没有成绩，先去搬一趟';
+  const box = $('board-body');
+  if (!lbAvailable()) {
+    box.replaceChildren(mk('p', 'board-note', '排行榜在虎扑 App 内开放——进 App 玩，出件大货就能跟所有人比谁更狠。'));
+    return;
+  }
+  box.replaceChildren(mk('p', 'board-note', '加载中…'));
+  try {
+    const data = await lbFetchBoard(boardTab);
+    const entries = data?.entries || [];
+    if (!entries.length) { box.replaceChildren(mk('p', 'board-note', '暂时还没有成绩，来抢第一。')); return; }
+    box.replaceChildren(...entries.map(boardRow));
+    if ((data.total ?? 99) <= 30) box.append(mk('p', 'board-note', '榜单积累中，来得早都在前面。'));
+  } catch { box.replaceChildren(mk('p', 'board-note', '榜单暂时打不开，稍后再试。')); }
+}
+
 function renderHistory() {
   const hb = $('hist-body');
   if (!save.history.length) { hb.replaceChildren(mk('p', 'screen-sub', '还没有战绩，去开第一局。')); return; }
@@ -2981,7 +3190,7 @@ function renderHistory() {
     const row = mk('div', `hist-row${hst.outcome === 'caught' ? ' caught' : ''}`);
     const left = mk('span');
     left.append(document.createTextNode(`${label} · ${whName(hst.warehouse)} `),
-      mk('span', 'h-meta', `${when} · 开 ${hst.opens} 格${hst.hasRed ? ' · 出大金' : ''}${hst.rating ? ` · ${hst.rating} 级` : ''}${hst.boosted ? (hst.boostKind === 'paid' ? ' · 🎟挑战' : ' · 📺爽局') : hst.assisted ? ' · 📺助力' : ''}`));
+      mk('span', 'h-meta', `${when} · 开 ${hst.opens} 格${hst.hasRed ? ' · 出大金' : ''}${hst.rating ? ` · ${hst.rating} 级` : ''}${hst.boosted ? ` · ${boostTagShort(hst.boostKind)}` : hst.assisted ? ' · 📺助力' : ''}`));
     row.append(left, mk('span', 'h-val', `${fmtWan(hst.value)} 万`));
     hb.append(row);
   }
@@ -3166,6 +3375,9 @@ $('btn-nav-stash').addEventListener('click', () => { renderStash(); show('screen
 $('btn-nav-collection').addEventListener('click', () => { renderCollection(); show('screen-collection'); });
 $('btn-nav-ach').addEventListener('click', () => { renderAchievements(); show('screen-achievements'); });
 $('btn-nav-history').addEventListener('click', () => { renderHistory(); show('screen-history'); });
+$('btn-nav-board').addEventListener('click', () => { renderBoard(); show('screen-board'); });
+$('board-tab-item').addEventListener('click', () => { boardTab = 'item_best'; renderBoard(); });
+$('board-tab-run').addEventListener('click', () => { boardTab = 'run_best'; renderBoard(); });
 document.querySelectorAll('.back-home').forEach(b => b.addEventListener('click', () => { renderHome(); show('screen-home'); }));
 
 // 测试钩子（TECH_SPEC）：返回当前局的纯数据快照
