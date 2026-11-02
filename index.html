@@ -26,6 +26,7 @@
   --tier-red: #ef3e4a;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body { background: var(--bg); color: var(--text); font-family: "PingFang SC", "Microsoft YaHei", sans-serif; }
 #app { max-width: 480px; margin: 0 auto; padding: calc(16px + var(--safe-top)) 14px 40px; min-height: 100vh; }
 .screen { display: none; }
@@ -2544,21 +2545,27 @@ function setEvent(text, bad) {
 }
 
 let displayedValue = 0;
-function renderRun(prevValue) {
+// 背包单件元素（全量重建与增量追加共用）
+function buildBagItemEl(it) {
+  const xs = it.cells.map(c => c[0]), ys = it.cells.map(c => c[1]);
+  const d = document.createElement('div');
+  d.className = `bag-item t${it.tier}`;
+  d.dataset.uid = it.uid;
+  d.style.left = `${Math.min(...xs) / 5 * 100}%`;
+  d.style.top = `${Math.min(...ys) / run.bagRows * 100}%`;
+  d.style.width = `${(Math.max(...xs) - Math.min(...xs) + 1) / 5 * 100}%`;
+  d.style.height = `${(Math.max(...ys) - Math.min(...ys) + 1) / 5 * 100}%`;
+  d.textContent = it.icon;
+  if (run.insuredUids.includes(it.uid)) d.append(mk('span', 'lock', '🔒'));
+  d.title = `${it.name} · ${fmtWan(it.value)} 万`;
+  return d;
+}
+function renderRun(prevValue, opts = {}) {
   saveRunCheckpoint(); // 局内每次渲染落检查点（phase=over 时自动清除）
-  // 估值跳字
+  // 估值直达（ADR-054：去掉 300ms rAF 跳字——弱渲染环境下跳字拉长成「延迟/重影」）
   const target = Math.round(run.bagValue() * 10) / 10;
-  if (FAST || prevValue === target) { displayedValue = target; $('hud-value').textContent = `${fmtWan(target)} 万`; }
-  else {
-    const from = prevValue, t0 = performance.now();
-    const step = t => {
-      const p = Math.min(1, (t - t0) / 300);
-      displayedValue = from + (target - from) * p;
-      $('hud-value').textContent = `${fmtWan(displayedValue)} 万`;
-      if (p < 1) requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
-  }
+  displayedValue = target;
+  $('hud-value').textContent = `${fmtWan(target)} 万`;
   $('hud-count').textContent = `${run.bag.length} 件`;
   $('hud-opens').textContent = `${run.opens}/16`;
   $('hud-depth').textContent = depthNameAt(run.opens);
@@ -2589,21 +2596,19 @@ function renderRun(prevValue) {
     vg.classList.toggle('pulse', prob01 < 1);
     if (prob01 >= 1) vg.classList.remove('pulse');
   } else { vg.style.opacity = 0; vg.classList.remove('pulse'); vg.classList.remove('on'); }
-  // 背包
+  // 背包（ADR-054：开格走增量追加，不再整包销毁重建——弱渲染环境每开一格全量重绘即「卡」）
   const bag = $('bag');
-  bag.innerHTML = '';
-  for (const it of run.bag) {
-    const xs = it.cells.map(c => c[0]), ys = it.cells.map(c => c[1]);
-    const d = document.createElement('div');
-    d.className = `bag-item t${it.tier}`;
-    d.style.left = `${Math.min(...xs) / 5 * 100}%`;
-    d.style.top = `${Math.min(...ys) / run.bagRows * 100}%`;
-    d.style.width = `${(Math.max(...xs) - Math.min(...xs) + 1) / 5 * 100}%`;
-    d.style.height = `${(Math.max(...ys) - Math.min(...ys) + 1) / run.bagRows * 100}%`;
-    d.textContent = it.icon;
-    if (run.insuredUids.includes(it.uid)) d.append(mk('span', 'lock', '🔒'));
-    d.title = `${it.name} · ${fmtWan(it.value)} 万`;
-    bag.appendChild(d);
+  if (opts.bagMode === 'append' && opts.appendItem) {
+    bag.appendChild(buildBagItemEl(opts.appendItem));
+    // 防震标记可能随新入包的最贵件转移：统一重挂
+    bag.querySelectorAll('.lock').forEach(el => el.remove());
+    for (const uid of run.insuredUids) {
+      const el = bag.querySelector(`[data-uid="${uid}"]`);
+      if (el) el.append(mk('span', 'lock', '🔒'));
+    }
+  } else if (opts.bagMode !== 'skip') {
+    bag.innerHTML = '';
+    for (const it of run.bag) bag.appendChild(buildBagItemEl(it));
   }
   const used = run.bag.reduce((s, i) => s + i.size, 0);
   $('bag-cells-info').textContent = `${used}/${run.bagCapacity} 格`;
@@ -2730,12 +2735,12 @@ async function onCell(idx) {
     const scareTxt = ev.scared ? ' 旁边货架咯吱一响，震动额外 +4！' : '';
     if (ev.type === 'item') {
       setEvent(`${ev.item.icon} ${ev.item.name}（${TIER_NAMES[ev.item.tier]}）${fmtWan(ev.item.value)} 万，已入包。震动 +${ev.inc}。${scareTxt}`, false);
-      renderRun(prevValue);
+      renderRun(prevValue, { bagMode: 'append', appendItem: run.bag[run.bag.length - 1] });
       busy = false;
       if (ev.cleared) { await delay(600); return finishToResult(ev.result); }
     } else {
       setEvent(`翻出 ${ev.item.name}，但背包塞不下了！${scareTxt}`, true);
-      renderRun(prevValue);
+      renderRun(prevValue, { bagMode: 'skip' });
       busy = false;
       openPending();
     }
