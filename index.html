@@ -3011,7 +3011,7 @@ function renderStash(note = '') {
   $('btn-sell-all').disabled = sellable.length === 0;
   const body = $('stash-body');
   body.replaceChildren();
-  if (!entries.length) { body.append(mk('p', 'screen-sub', '仓库空空的。去开一局，把战利品带回来——它们会以实物躺在这里，等你出售或摆上展柜。')); return; }
+  if (!entries.length) { body.append(mk('p', 'screen-sub', '仓库空空的。去开一局，把战利品带回来——它们会以实物躺在这里，等你出售或摆上展柜。')); renderCabinet(); return; } // 空仓也要渲染展柜（ADR-047）：新玩家第一眼就该看见展览柜
   for (const e of entries) {
     const item = itemOf(e.id);
     if (!item) continue;
