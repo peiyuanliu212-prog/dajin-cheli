@@ -339,6 +339,9 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
 .board-score { font-weight: 800; font-size: 15px; }
 .board-note { color: var(--muted); font-size: 13px; padding: 10px 2px; }
 
+/* 存档码（ADR-055） */
+.code-area { width: 100%; box-sizing: border-box; background: #0d100c; color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 10px; font-size: 12px; line-height: 1.5; word-break: break-all; resize: vertical; margin: 6px 0 10px; font-family: ui-monospace, monospace; }
+
 </style>
 </head>
 <body>
@@ -373,7 +376,7 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
         <p>💎 瑰宝升级：全 1 格更好装，还能看广告祈福把出率拉高</p>
         <p>🏚 战利品实物入仓、展览柜照常营业：好货带回家摆上柜</p>
         <p>🎞 画面大优化：动画滑动更顺滑，不再掉帧</p>
-        <p>📺 广告奖励更稳了：看完广告哪怕页面刷新，奖励也会自动补发到账</p>
+        <p>📺 爽局祈福改充能：看一次管 3 趟；广告奖励丢了自动补发；新增存档码，换设备接着玩</p>
       </div>
       <button id="btn-title-start" class="btn-primary btn-title">开始游戏</button>
       <button id="btn-title-continue" class="btn-ghost hidden" style="width:100%;margin-top:10px">▶ 继续上局（未结束）</button>
@@ -409,6 +412,7 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
       <button id="btn-nav-ach" class="btn-ghost">🏆 成就 <span id="nav-ach-count"></span></button>
       <button id="btn-nav-history" class="btn-ghost">📜 战绩</button>
       <button id="btn-nav-board" class="btn-ghost">👑 排行榜</button>
+      <button id="btn-nav-save" class="btn-ghost">💾 存档码</button>
     </div>
     <button id="btn-sound-home" class="btn-ghost sound-toggle">🔊 音效：开</button>
     <button id="btn-desktop" class="btn-ghost hidden">📲 添加到桌面</button>
@@ -597,6 +601,20 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
       <div class="ultra-hint">轻点任意处收下</div>
     </div>
   </div>
+    <div id="save-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3>💾 存档码 · 导出 / 导入</h3>
+        <p class="pending-note">导出：把下面的码整段存好（点框内长按全选复制），换设备、清缓存、重装后导入就能恢复。<b>存档码等于你的全部进度，别发给别人。</b></p>
+        <textarea id="save-export" class="code-area" readonly rows="5"></textarea>
+        <p class="pending-note">导入：把存档码粘贴到下面，点导入会<b>覆盖当前进度</b>，覆盖后自动重进游戏。</p>
+        <textarea id="save-import" class="code-area" rows="5" placeholder="把存档码粘贴到这里"></textarea>
+        <p class="pending-note" id="save-note"></p>
+        <div class="modal-btns">
+          <button id="btn-save-import" class="btn-primary">导入存档</button>
+          <button id="btn-save-close" class="btn-ghost">关闭</button>
+        </div>
+      </div>
+    </div>
     <div id="intel-modal" class="modal hidden">
       <div class="modal-card">
         <h3>🔍 藏宝情报 · 选一件想要的</h3>
@@ -724,7 +742,7 @@ const ECONOMY = {
   chainMult: [1, 1.15, 1.25, 1.3], // 按连锁仓序（1 起），第 4 仓起封顶
   achievementCoin: 20, collectorCoin: 300, // v1.1：全图鉴成就单独加码 300
   setCoin: 100,
-  ads: { supplyCoins: 40, coinBonusRate: 0.5, coinBonusCap: 40, expandCells: 4, recoveryCompCoins: 30, shockDrop: 20, shockFloor: 85, intelWeightMult: 6, gapMax: 30, sellBonusRate: 0.25, superDailyCap: 2, ultraMult: 4 }, // ADR-032 广告位参数；superDailyCap 为 ADR-048 超级爽局每日趟数上限
+  ads: { supplyCoins: 40, coinBonusRate: 0.5, coinBonusCap: 40, expandCells: 4, recoveryCompCoins: 30, shockDrop: 20, shockFloor: 85, intelWeightMult: 6, gapMax: 30, sellBonusRate: 0.25, superDailyCap: 2, ultraMult: 4, boostTrips: 3, ultraTrips: 3 }, // ADR-032 广告位参数；superDailyCap 为 ADR-048 超级爽局每日趟数上限；boostTrips/ultraTrips 为 ADR-055 充能制（一支广告管的趟数）
 };
 function coinRateAt(R) {
   for (const [t, r] of ECONOMY.rateBands) if (R < t) return r;
@@ -1449,6 +1467,7 @@ const DEFAULTS = {
   lastSupplyDay: null, lastAdCoinRunId: null, lastAdClaimTs: null, // ADR-032：每日补给日期 / 结算广告加成与补发幂等
   lastIntelDay: null, lastGapDay: null, // ADR-041：藏宝情报 / 门票差额补齐的日期计数
   lastSuperDay: null, superCount: 0, // ADR-048：超级爽局每日趟数计数
+  boostBank: 0, ultraBank: 0, // ADR-055：爽局/祈福充能余额（看一次广告 +boostTrips/ultraTrips 趟，开局自动消费）
   stash: [], cabinet: [], cabinetSlots: 8, // v1.1 仓库系统：战利品实例 / 展柜 uid 列表 / 已解锁展位数
   lbBest: {}, // ADR-048 排行榜：本地各榜最佳（score=估值×10 整数），仅刷新时才向云端提交
   sellBonusArmed: false, lastSellBonusDay: null, // v1.1：出售加成（下一次出售 +25%）与日期计数
@@ -1499,6 +1518,13 @@ function refundShopItem(save, key) {
 function storeSave(save) {
   try { localStorage.setItem(KEY, JSON.stringify(save)); } catch { /* 容器不支持时降级为内存态 */ }
   mirrorCloudSave(save); // 虎扑容器内同步一份云存档（无容器时 platform 内部静默跳过）
+}
+
+// 存档码导入（ADR-055）：外部对象按默认补齐后整体替换当前存档；调用方负责校验与二次确认
+function replaceSave(obj) {
+  const merged = { ...freshDefaults(), ...obj };
+  storeSave(merged);
+  return merged;
 }
 
 const ACHIEVEMENTS = [
@@ -1703,14 +1729,17 @@ function addMemorial(save, item) {
 //   window.ColorboxAI.vatask.completeRewardVideo() → {code:200, data:{rewarded}}
 //   window.ColorboxAI.vatask.getActivityTaskState() → {code:200, data:{availableChanceCount, tasks:[...]}}
 // 平台真记账是服务端 availableChanceCount：完播自动 +chanceGrantCount、跨重载不丢。
-// tasks[].status 的 completed 是「本周期已完成」口径（文档原文），不是单次完播凭证，禁止用它判定补发
-// ——《乱世拼将》v5.18 真机实锤：凭 status 补发从未在真机触发；且旧实现「读标记即删」使任何一次
-// 核对失败（桥未就绪/查询异常/记账延迟）都永久丢奖（大金 v7 主人真机复现）。
-// 现行机制：拉起前把当前余额记入 PENDING.base；开机核对凭余额差量（now > base）判定完播；
-// 标记只在核对落定（确认记账→补发 / 超 12h 未记账→过期）后删除，查询失败或未落定一律保留、下次开机再核。
-// 无基线的存量标记（旧版写入）退回 status 口径核对，仅作兼容。
+// tasks[].status 的 completed 是「本周期已完成」口径（文档原文），不是单次完播凭证，禁止用它判定补发。
+// ADR-055 加固（主人真机复报「看完广告页面没了、奖励也没了」）：
+//   ① PENDING 改队列（数组，上限 6）——连续看广告不再互相覆盖标记；
+//   ② 标记记 bootSeq（每次页面加载自增）：标记跨过一次页面重载（广告期间页被系统回收重进）
+//      且已过 45 秒、平台余额可读（哪怕没涨——可能被平台日上限封顶不记账）→ 兜底补发；
+//      同一 boot 内的未完播不享受兜底（防当场杀页白嫖），仍走余额差量＋12h 过期；
+//   ③ 差量判定（now > base）仍是主通道，落定才删标记；查询失败一律保留、下次再核。
 const PENDING_KEY = 'dajin_pending_ad';
+const BOOT_KEY = 'dajin_boot_seq';
 const PENDING_TTL_MS = 12 * 3600 * 1000;
+const RELOAD_GRACE_MS = 45 * 1000;
 
 function vataskReady() {
   return typeof window !== 'undefined' && !!(window.ColorboxAI && window.ColorboxAI.vatask && typeof window.ColorboxAI.vatask.completeRewardVideo === 'function');
@@ -1718,7 +1747,28 @@ function vataskReady() {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-function clearPending() { try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ } }
+// 本次页面加载的 boot 序号（模块初始化时自增一次；标记写入时带上，用于识别「跨重载」）
+let bootSeq = 0;
+try { bootSeq = (Number(localStorage.getItem(BOOT_KEY)) || 0) + 1; localStorage.setItem(BOOT_KEY, String(bootSeq)); } catch { bootSeq = 0; }
+
+function readQueue() {
+  try {
+    const raw = localStorage.getItem(PENDING_KEY);
+    if (!raw) return [];
+    const j = JSON.parse(raw);
+    if (Array.isArray(j)) return j.filter(m => m && m.type);
+    if (j && j.type) return [j]; // 存量单对象标记（ADR-046 时代）兼容
+    return [];
+  } catch { return []; }
+}
+function writeQueue(q) {
+  try {
+    if (q.length) localStorage.setItem(PENDING_KEY, JSON.stringify(q.slice(-6)));
+    else localStorage.removeItem(PENDING_KEY);
+  } catch { /* 标记失败不阻塞拉起 */ }
+}
+function pushPending(marker) { const q = readQueue(); q.push(marker); writeQueue(q); }
+function dropPending(ts) { writeQueue(readQueue().filter(m => m.ts !== ts)); }
 
 // 读平台余额（服务端 availableChanceCount）；读不到返回 null，绝不猜（ADR-046）
 // 桥调用加 2.5s 超时兜底：状态查询挂死不能堵住广告拉起（超时按读不到处理，base 记 null）
@@ -1740,17 +1790,18 @@ async function readChanceCount() {
 async function watchReward(kind, context = {}) {
   if (!vataskReady()) return { granted: true, simulated: true };
   const base = await readChanceCount();
-  try { localStorage.setItem(PENDING_KEY, JSON.stringify({ type: kind, ts: Date.now(), base, ...context })); } catch { /* 标记失败不阻塞拉起 */ }
+  const marker = { type: kind, ts: Date.now(), base, boot: bootSeq, ...context };
+  pushPending(marker);
   try {
     const res = await window.ColorboxAI.vatask.completeRewardVideo();
     const ok = !!(res && res.code === 200 && res.data && res.data.rewarded);
-    if (ok) { clearPending(); return { granted: true, simulated: false }; }
+    if (ok) { dropPending(marker.ts); return { granted: true, simulated: false }; }
     // 平台明确回执（code 200）说未完播 → 本次落定，删标记；
-    // 非 200/无回执 → 不落定，保留标记待开机凭余额差量核对（防服务端记账已到、回执异常丢奖）
-    if (res && res.code === 200) clearPending();
+    // 非 200/无回执 → 不落定，保留标记待核对（防服务端记账已到、回执异常丢奖）
+    if (res && res.code === 200) dropPending(marker.ts);
     return { granted: false, simulated: false, message: (res && res.message) || '未获得奖励' };
   } catch {
-    // 拉起/回执异常：保留标记，下次开机凭余额差量核对补发（完播可能已在服务端记账）
+    // 拉起/回执异常（含页面被回收）：保留标记，重进后核对补发
     return { granted: false, simulated: false, message: '广告拉起失败，请重试' };
   }
 }
@@ -1760,35 +1811,40 @@ const Ads = {
   boostRun() { return watchReward('boost'); },
   // 其余点位（ADR-032）统一入口
   watch(kind, context) { return watchReward(kind, context); },
-  // 开机恢复：广告期间页面被容器重载时，凭 PENDING 基线 + 平台余额差量核对；
-  // 核实完成返回标记对象 {type, ts, runId?, amount?}（发放口径在 main 按点位处理）；
-  // 未落定（余额未增/查询失败/桥未就绪）返回 null 且标记原样保留，绝不提前删。
+  // 开机/回前台恢复：逐个核对队列标记，返回最老的一个「已落定可补发」标记（main 循环调用至 null）；
+  // 落定口径：①余额差量 now > base（完播已记账）②跨重载兜底（boot 变了＋≥45s＋余额可读）；
+  // 未落定（余额未增且同 boot / 查询失败 / 桥未就绪）返回 null 且标记原样保留，绝不提前删。
   async recoverPending() {
-    let raw = null;
-    try { raw = localStorage.getItem(PENDING_KEY); } catch { return null; }
-    if (!raw) return null;
     if (!vataskReady() || typeof window.ColorboxAI.vatask.getActivityTaskState !== 'function') return null; // 桥未就绪：保留标记，下次再核
-    let j = null;
-    try { j = JSON.parse(raw); } catch { clearPending(); return null; }
-    if (!j || !j.type) { clearPending(); return null; }
-    const age = Date.now() - (j.ts || 0);
-    if (typeof j.base === 'number') {
-      let now = await readChanceCount();
-      if (now === null) { await sleep(900); now = await readChanceCount(); } // 查询失败给一次重试
-      if (now === null) return null; // 仍失败：保留标记，下次开机再核
-      if (now > j.base) { clearPending(); return j; } // 落定：完播已在服务端记账 → 补发
-      if (age > PENDING_TTL_MS) { clearPending(); return null; } // 落定：超 12h 未记账 → 判未完播，过期清除防堵死
-      return null; // 未落定（可能记账延迟）：保留标记，下次开机再核
-    }
-    // 存量无基线标记（旧版写入）：退回 status 口径核对，仅此一代兼容；查询失败同样保留
-    try {
-      const st = await window.ColorboxAI.vatask.getActivityTaskState();
-      if (st && st.code === 200 && st.data) {
-        const task = (st.data.tasks || []).find(x => x.taskCode === 'reward');
-        if (task && task.status === 'completed') { clearPending(); return j; }
-        if (age > PENDING_TTL_MS) clearPending();
+    const q = readQueue();
+    if (!q.length) return null;
+    let now = null; // 本轮余额只读一次，队列共用
+    let nowRead = false;
+    for (const j of q) {
+      const age = Date.now() - (j.ts || 0);
+      if (typeof j.base === 'number') {
+        if (!nowRead) {
+          now = await readChanceCount();
+          if (now === null) { await sleep(900); now = await readChanceCount(); }
+          nowRead = true;
+        }
+        if (now === null) return null; // 仍失败：整队保留，下次再核
+        if (now > j.base) { dropPending(j.ts); return j; } // 落定①：完播已在服务端记账
+        if (typeof j.boot === 'number' && j.boot < bootSeq && age >= RELOAD_GRACE_MS) { dropPending(j.ts); return j; } // 落定②：跨重载兜底
+        if (age > PENDING_TTL_MS) { dropPending(j.ts); continue; } // 落定③：超 12h 未记账 → 过期，继续看下一个
+        return null; // 未落定（可能记账延迟）：保留，下次再核（队首未落定不跳队）
       }
-    } catch { /* 核对失败：保留标记 */ }
+      // 存量无基线标记（ADR-046 前旧版写入）：退回 status 口径核对，仅此一代兼容
+      try {
+        const st = await window.ColorboxAI.vatask.getActivityTaskState();
+        if (st && st.code === 200 && st.data) {
+          const task = (st.data.tasks || []).find(x => x.taskCode === 'reward');
+          if (task && task.status === 'completed') { dropPending(j.ts); return j; }
+          if (age > PENDING_TTL_MS) { dropPending(j.ts); continue; }
+        }
+      } catch { /* 核对失败：保留标记 */ }
+      return null;
+    }
     return null;
   },
 };
@@ -2064,6 +2120,7 @@ $('btn-sound-home').addEventListener('click', toggleSound);
 $('btn-sound-run').addEventListener('click', toggleSound);
 applySoundUI();
 document.addEventListener('pointerdown', () => warmAudio(), { once: true });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) handleAdRecovery(); }); // ADR-055：回前台重试补发（桥可能刚就绪）
 applySafeTop();
 
 renderHome();
@@ -2156,13 +2213,20 @@ $('btn-supply').addEventListener('click', async () => {
 });
 // 广告期间页面被重载 → 开机补发（幂等：补给看日期、结算加成看 runId、其余看标记时间戳）
 function handleAdRecovery() {
-  Ads.recoverPending().then(rec => {
-    if (!rec) return;
+  (async () => {
+    for (let i = 0; i < 6; i++) { // ADR-055：队列逐个落定，一次开机可补多支
+      const rec = await Ads.recoverPending();
+      if (!rec) break;
+      applyAdGrant(rec);
+    }
+  })().catch(() => {});
+}
+function applyAdGrant(rec) {
     if (save.lastAdClaimTs === rec.ts) return;
     save.lastAdClaimTs = rec.ts;
-    if (rec.type === 'boost') { boostCredit = true; storeSave(save); return; }
-    if (rec.type === 'super') { superCredit = true; boostCredit = true; storeSave(save); return; }
-    if (rec.type === 'ultra') { ultraCredit = true; storeSave(save); return; }
+    if (rec.type === 'boost') { save.boostBank = (save.boostBank ?? 0) + ECONOMY.ads.boostTrips; storeSave(save); $('supply-note').textContent = `📺 爽局充能已补发 +${ECONOMY.ads.boostTrips} 趟`; return; }
+    if (rec.type === 'super') { superCredit = true; storeSave(save); return; }
+    if (rec.type === 'ultra') { save.ultraBank = (save.ultraBank ?? 0) + ECONOMY.ads.ultraTrips; storeSave(save); $('supply-note').textContent = `📺 祈福充能已补发 +${ECONOMY.ads.ultraTrips} 趟`; return; }
     if (rec.type === 'supply') {
       if (save.lastSupplyDay !== todayStr()) { save.lastSupplyDay = todayStr(); creditCoins(ECONOMY.ads.supplyCoins); $('supply-note').textContent = `📺 广告补给已补发 +${ECONOMY.ads.supplyCoins} 🪙`; }
       else storeSave(save);
@@ -2191,7 +2255,6 @@ function handleAdRecovery() {
       $('supply-note').textContent = `📺 广告奖励已补发 +${ECONOMY.ads.recoveryCompCoins} 🪙（页面刷新过，原局奖励折算为仓币）`;
     }
     renderHome();
-  }).catch(() => {});
 }
 
 // ---------- 选仓 ----------
@@ -2234,9 +2297,9 @@ function openShop(warehouse) {
   $('shop-modal').classList.remove('hidden');
   renderShop();
 }
-function boostActiveHere() { return !!(shopCtx?.boostWatched || boostCredit || (chainNextLeg > 1 && boostChain)); }
+function boostActiveHere() { return !!((chainNextLeg > 1 && boostChain) || (!shopCtx?.boostOff && (save.boostBank ?? 0) > 0)); } // ADR-055 充能制：存货>0 自动生效（可关）
 function superActiveHere() { return !!(shopCtx?.superWatched || superCredit || (chainNextLeg > 1 && superChain)); }
-function ultraActiveHere() { return !!(shopCtx?.ultraWatched || ultraCredit || (chainNextLeg > 1 && ultraChain)); }
+function ultraActiveHere() { return !!((chainNextLeg > 1 && ultraChain) || (!shopCtx?.ultraOff && (save.ultraBank ?? 0) > 0)); } // ADR-055 充能制
 function superUsedToday() { return save.lastSuperDay === todayStr() ? (save.superCount ?? 0) : 0; }
 function boostTag(kind) { return kind === 'paid' ? '🎟 挑战仓' : kind === 'super' ? '🔥 超级爽局' : kind === 'newbie' ? '🌱 新手巅峰' : '📺 爽局'; }
 function boostTagBare(kind) { return kind === 'paid' ? '🎟挑战仓' : kind === 'super' ? '🔥超级爽局' : kind === 'newbie' ? '🌱新手巅峰' : '📺广告爽局'; }
@@ -2287,13 +2350,34 @@ function renderShop() {
     shopBody.append(d);
   } else {
     const wrap = mk('span');
-    if (boostOn) {
+    const bank = save.boostBank ?? 0;
+    if (chainNextLeg > 1 && boostChain) {
       wrap.append(mk('span', 'sr-name', '📺 爽局生效中'), mk('span', 'sr-desc', '本趟出击出货率已升级（出红概率 8%），连锁不断就一直有效'));
       const d = mk('div', 'shop-row sel boost');
       d.append(wrap, mk('b', null, '✓'));
       shopBody.append(d);
+    } else if (bank > 0) {
+      if (!shopCtx.boostOff) {
+        wrap.append(mk('span', 'sr-name', `📺 爽局生效中（存货 ${bank} 趟）`), mk('span', 'sr-desc', '看一次管 3 趟，本趟自动生效（出红概率 8%）· 点此本趟不用'));
+        const b = mk('button', 'shop-row boost sel');
+        b.dataset.boostoff = '1';
+        b.append(wrap, mk('b', null, '✓'));
+        shopBody.append(b);
+      } else {
+        wrap.append(mk('span', 'sr-name', `📺 爽局已备好（存货 ${bank} 趟）`), mk('span', 'sr-desc', '本趟已关（纯 B 局，最佳纪录才认）· 点此开启'));
+        const b = mk('button', 'shop-row boost');
+        b.dataset.boostoff = '1';
+        b.append(wrap, mk('b', null, '开'));
+        shopBody.append(b);
+      }
+      const wrap2 = mk('span');
+      wrap2.append(mk('span', 'sr-name', '📺 再看一支 · 爽局再充 3 趟'), mk('span', 'sr-desc', '存货越多越省事，不用每趟看广告'));
+      const b2 = mk('button', 'shop-row boost');
+      b2.dataset.boost = '1';
+      b2.append(wrap2, mk('b', null, '免费'));
+      shopBody.append(b2);
     } else {
-      wrap.append(mk('span', 'sr-name', '📺 看广告 · 本趟升级爽局'), mk('span', 'sr-desc', '出货率大涨（出红概率 1.5%→8%），连锁整趟有效；最佳纪录不认爽局'));
+      wrap.append(mk('span', 'sr-name', '📺 看广告 · 爽局充能 3 趟'), mk('span', 'sr-desc', '看一次管 3 趟：接下来 3 趟出货率大涨（出红 1.5%→8%），不用每趟看；最佳纪录不认爽局'));
       const b = mk('button', 'shop-row boost');
       b.dataset.boost = '1';
       b.append(wrap, mk('b', null, '免费'));
@@ -2334,13 +2418,34 @@ function renderShop() {
   }
   { // 瑰宝祈福（ADR-050）：看广告，本趟 tier6 权重 ×ultraMult，与其他行可叠加
     const wrap = mk('span');
-    if (ultraActiveHere()) {
+    const uBank = save.ultraBank ?? 0;
+    if (chainNextLeg > 1 && ultraChain) {
       wrap.append(mk('span', 'sr-name', '🔮 瑰宝祈福生效中'), mk('span', 'sr-desc', `本趟瑰宝出率 ×${ECONOMY.ads.ultraMult}，连锁整趟有效`));
       const d = mk('div', 'shop-row sel boost');
       d.append(wrap, mk('b', null, '✓'));
       shopBody.append(d);
+    } else if (uBank > 0) {
+      if (!shopCtx.ultraOff) {
+        wrap.append(mk('span', 'sr-name', `🔮 瑰宝祈福生效中（存货 ${uBank} 趟）`), mk('span', 'sr-desc', `看一次管 3 趟，本趟瑰宝出率 ×${ECONOMY.ads.ultraMult} · 点此本趟不用`));
+        const b = mk('button', 'shop-row boost sel');
+        b.dataset.ultraoff = '1';
+        b.append(wrap, mk('b', null, '✓'));
+        shopBody.append(b);
+      } else {
+        wrap.append(mk('span', 'sr-name', `🔮 祈福已备好（存货 ${uBank} 趟）`), mk('span', 'sr-desc', '本趟已关 · 点此开启'));
+        const b = mk('button', 'shop-row boost');
+        b.dataset.ultraoff = '1';
+        b.append(wrap, mk('b', null, '开'));
+        shopBody.append(b);
+      }
+      const wrap2 = mk('span');
+      wrap2.append(mk('span', 'sr-name', '🔮 再看一支 · 祈福再充 3 趟'), mk('span', 'sr-desc', '存货越多越省事，不用每趟看广告'));
+      const b2 = mk('button', 'shop-row boost');
+      b2.dataset.ultra = '1';
+      b2.append(wrap2, mk('b', null, '免费'));
+      shopBody.append(b2);
     } else {
-      wrap.append(mk('span', 'sr-name', '🔮 看广告 · 瑰宝祈福'), mk('span', 'sr-desc', `本趟瑰宝出率 ×${ECONOMY.ads.ultraMult}：想要镇馆之宝，先给它上炷香`));
+      wrap.append(mk('span', 'sr-name', '🔮 看广告 · 祈福充能 3 趟'), mk('span', 'sr-desc', `看一次管 3 趟：接下来 3 趟瑰宝出率 ×${ECONOMY.ads.ultraMult}，不用每趟看：想要镇馆之宝，先给它上炷香`));
       const b = mk('button', 'shop-row boost');
       b.dataset.ultra = '1';
       b.append(wrap, mk('b', null, '免费'));
@@ -2402,8 +2507,8 @@ function renderShop() {
     $('shop-note').textContent = '广告播放中…';
     const r = await Ads.boostRun();
     if (r.simulated && !FAST) await delay(900); // 仅模拟广告补一个播放停顿；真广告自带时长
-    if (r.granted) { shopCtx.boostWatched = true; renderShop(); $('shop-note').textContent = r.simulated ? '爽局已激活：本趟出击出货率升级！（试玩版模拟广告）' : '爽局已激活：本趟出击出货率升级！'; }
-    else { boostBtn.disabled = false; $('shop-note').textContent = r.message || '广告未看完，爽局未生效。'; }
+    if (r.granted) { save.boostBank = (save.boostBank ?? 0) + ECONOMY.ads.boostTrips; storeSave(save); renderShop(); $('shop-note').textContent = `爽局充能 +${ECONOMY.ads.boostTrips} 趟（共 ${save.boostBank} 趟）：接下来几趟自动生效，不用每趟看！${r.simulated ? '（试玩版模拟广告）' : ''}`; }
+    else { boostBtn.disabled = false; $('shop-note').textContent = r.message || '广告未看完，充能失败。'; }
   });
   const superBtn = document.querySelector('[data-super]');
   if (superBtn) superBtn.addEventListener('click', async () => {
@@ -2420,8 +2525,8 @@ function renderShop() {
     $('shop-note').textContent = '广告播放中…';
     const r = await Ads.watch('ultra');
     if (r.simulated && !FAST) await delay(900);
-    if (r.granted) { shopCtx.ultraWatched = true; renderShop(); $('shop-note').textContent = r.simulated ? '祈福成功：本趟瑰宝出率 ×4！（试玩版模拟广告）' : '祈福成功：本趟瑰宝出率 ×4！'; }
-    else { ultraBtn.disabled = false; $('shop-note').textContent = r.message || '广告未看完，祈福未生效。'; }
+    if (r.granted) { save.ultraBank = (save.ultraBank ?? 0) + ECONOMY.ads.ultraTrips; storeSave(save); renderShop(); $('shop-note').textContent = `祈福充能 +${ECONOMY.ads.ultraTrips} 趟（共 ${save.ultraBank} 趟）：接下来几趟瑰宝出率 ×4，不用每趟看！${r.simulated ? '（试玩版模拟广告）' : ''}`; }
+    else { ultraBtn.disabled = false; $('shop-note').textContent = r.message || '广告未看完，充能失败。'; }
   });
   document.querySelectorAll('.shop-row').forEach(r => r.addEventListener('click', () => {
     const key = r.dataset.item;
@@ -2429,6 +2534,10 @@ function renderShop() {
     shopCtx.items.has(key) ? shopCtx.items.delete(key) : shopCtx.items.add(key);
     renderShop();
   }));
+  const boostOffBtn = document.querySelector('[data-boostoff]');
+  if (boostOffBtn) boostOffBtn.addEventListener('click', () => { shopCtx.boostOff = !shopCtx.boostOff; renderShop(); });
+  const ultraOffBtn = document.querySelector('[data-ultraoff]');
+  if (ultraOffBtn) ultraOffBtn.addEventListener('click', () => { shopCtx.ultraOff = !shopCtx.ultraOff; renderShop(); });
   const intelBtn = document.querySelector('[data-intel]');
   if (intelBtn) intelBtn.addEventListener('click', () => openIntelPicker());
   const gapBtn = document.querySelector('[data-gap]');
@@ -2490,11 +2599,13 @@ function startRun(warehouse, opts = {}) {
   const { boostNow = false, superNow = false, ultraNow = false, intelNow = null, ...runOpts } = opts;
   const seed = SEED_PARAM ?? Math.floor(Math.random() * 90000000) + 10000000;
   const leg = chainNextLeg; chainNextLeg = 1;
-  if (leg === 1) { // 新出击：商店激活或重载补发额度
-    boostChain = boostNow || boostCredit; boostCredit = false;
+  if (leg === 1) { // 新出击：充能存货自动生效（ADR-055），整趟各扣 1
+    boostChain = boostNow;
     superChain = superNow || superCredit; superCredit = false;
-    ultraChain = ultraNow || ultraCredit; ultraCredit = false;
+    ultraChain = ultraNow;
     if (superChain) boostChain = true;
+    if (boostChain && (save.boostBank ?? 0) > 0) { save.boostBank -= 1; storeSave(save); }
+    if (ultraChain && (save.ultraBank ?? 0) > 0) { save.ultraBank -= 1; storeSave(save); }
     shockOfferDone = false; intelChain = intelNow || intelCredit; intelCredit = null;
     newbieChain = !boostChain && warehouse.id !== 'challenge' && (save.runs ?? 0) < 3; // 新手巅峰：存档前 3 局整趟 A 配置
     if (superChain) { const t = todayStr(); if (save.lastSuperDay !== t) { save.lastSuperDay = t; save.superCount = 0; } save.superCount = (save.superCount ?? 0) + 1; storeSave(save); }
@@ -3486,6 +3597,50 @@ $('btn-nav-collection').addEventListener('click', () => { renderCollection(); sh
 $('btn-nav-ach').addEventListener('click', () => { renderAchievements(); show('screen-achievements'); });
 $('btn-nav-history').addEventListener('click', () => { renderHistory(); show('screen-history'); });
 $('btn-nav-board').addEventListener('click', () => { renderBoard(); show('screen-board'); });
+
+// ---------- 存档码（ADR-055）：零剪贴板 API（虎扑门禁口径）——导出靠手动复制文本框，导入读文本框值 ----------
+function encodeSaveCode(obj) {
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  let bin = '';
+  bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return 'DJ1-' + btoa(bin);
+}
+function decodeSaveCode(txt) {
+  const t = (txt || '').replace(/\s+/g, '').replace(/^DJ1-/, '');
+  if (!t) return null;
+  const bin = atob(t);
+  const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+let saveImportArmed = false;
+$('btn-nav-save').addEventListener('click', () => {
+  $('save-export').value = encodeSaveCode(save);
+  $('save-import').value = '';
+  $('save-note').textContent = '';
+  saveImportArmed = false;
+  $('btn-save-import').textContent = '导入存档';
+  $('save-modal').classList.remove('hidden');
+});
+$('btn-save-close').addEventListener('click', () => $('save-modal').classList.add('hidden'));
+$('btn-save-import').addEventListener('click', () => {
+  let obj = null;
+  try { obj = decodeSaveCode($('save-import').value); } catch { obj = null; }
+  if (!obj || typeof obj !== 'object' || typeof obj.coins !== 'number' || typeof obj.runs !== 'number' || !Array.isArray(obj.stash) || typeof obj.collection !== 'object') {
+    $('save-note').textContent = '这段码不对：不是有效的存档码，检查一下有没有复制全。';
+    saveImportArmed = false;
+    $('btn-save-import').textContent = '导入存档';
+    return;
+  }
+  if (!saveImportArmed) {
+    saveImportArmed = true;
+    $('btn-save-import').textContent = '确认覆盖导入？再点一次';
+    $('save-note').textContent = `这份存档：仓币 ${obj.coins} 🪙 · 共 ${obj.runs} 局 · 仓库 ${obj.stash.length} 件。导入将覆盖当前进度！`;
+    return;
+  }
+  replaceSave(obj);
+  $('save-note').textContent = '导入成功，正在重进游戏…';
+  setTimeout(() => location.reload(), 700);
+});
 $('board-tab-item').addEventListener('click', () => { boardTab = 'item_best'; renderBoard(); });
 $('board-tab-run').addEventListener('click', () => { boardTab = 'run_best'; renderBoard(); });
 document.querySelectorAll('.back-home').forEach(b => b.addEventListener('click', () => { renderHome(); show('screen-home'); }));
