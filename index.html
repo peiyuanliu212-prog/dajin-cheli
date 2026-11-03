@@ -394,7 +394,7 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
         <p class="tn-head">📢 更新公告 · 狂欢版</p>
         <p>🔥 超级爽局登场：爽局之上再拉一档，出货直接拉满</p>
         <p>👑 排行榜开榜：谁出的货最贵，摆出来一起比</p>
-        <p>🌱 新手巅峰：头几把就是巅峰手气，先爽为敬</p>
+        <p>🧺 藏品翻倍：160 件宝贝翻新上架，不再老是那几样</p>
         <p>💎 瑰宝升级：全 1 格更好装，还能看广告祈福把出率拉高</p>
         <p>🎁 金库幸运箱上线：看广告免费开箱，连开必出大奖，不限次数</p>
         <p>👻 玩家互动上线：幽灵对手局内追赶、全服出货播报、每日全服目标领奖</p>
@@ -848,7 +848,7 @@ function pickWeighted(rnd, obj) {
 }
 
 /* ===== src/items.js ===== */
-// 物品表 v0.4：80 件（白20/绿20/蓝16/紫12/金8/红4），全原创命名（ADR-040 每档翻倍）
+// 物品表 v0.5：160 件（白40/绿40/蓝32/紫24/金16/红8）＋瑰宝 2，全原创命名（ADR-040 每档翻倍、ADR-058 再翻倍，比例不变）
 // schema: id/name/desc/tier(0-5)/icon/weight(仅同档池内权重) + 可选 valueMin/valueMax/sizeDist 覆写
 // 预留字段 setId/series/flavor 一期不填不开发（二期图鉴用）
 const ITEMS = [
@@ -947,11 +947,98 @@ const ITEMS = [
   { id: 'itm_080', name: '月球陨石标本', desc: '真从天上掉下来的石头', tier: 5, icon: '☄️', weight: 1 },
   { id: 'itm_081', name: '亚洲之心', desc: '传说中的巨钻，见过的人没几个', tier: 6, icon: '🔷', weight: 1, valueMin: 4500, valueMax: 6000, sizeDist: { 1: 1 } },
   { id: 'itm_082', name: '亚特兰蒂斯的眼泪', desc: '深海蓝宝石，沉了三千年的光', tier: 6, icon: '💧', weight: 1, valueMin: 3800, valueMax: 5200, sizeDist: { 1: 1 } },
+  // —— ADR-058 扩充：藏品再翻倍 +80 件（比例不变、瑰宝不增；套装各 +4） ——
+  // 白 · 粗货 +20
+  { id: 'itm_083', name: '旧马扎', desc: '腿有点晃，不耽误坐', tier: 0, icon: '🪑', weight: 1 },
+  { id: 'itm_084', name: '缺页字典', desc: '缺的正好是常用字那几页', tier: 0, icon: '📕', weight: 1 },
+  { id: 'itm_085', name: '旧铁锅', desc: '锅底一层老油光', tier: 0, icon: '🍳', weight: 1 },
+  { id: 'itm_086', name: '竹编提篮', desc: '提手缠了三层布', tier: 0, icon: '🧺', weight: 1 },
+  { id: 'itm_087', name: '旧暖水瓶', desc: '内胆还亮，塞子发黄', tier: 0, icon: '🧴', weight: 1 },
+  { id: 'itm_088', name: '坏座钟', desc: '钟摆还在，时针不走', tier: 0, icon: '🕰️', weight: 1, setId: 'set_time' },
+  { id: 'itm_089', name: '旧毛巾', desc: '洗得发薄，吸水还是快', tier: 0, icon: '🧣', weight: 1 },
+  { id: 'itm_090', name: '铁皮铅笔盒', desc: '一开一合咣当响', tier: 0, icon: '🖊️', weight: 1 },
+  { id: 'itm_091', name: '旧报纸捆', desc: '捆得整齐，全是旧新闻', tier: 0, icon: '🗞️', weight: 1 },
+  { id: 'itm_092', name: '缺口砂锅', desc: '炖汤漏了一角', tier: 0, icon: '🥘', weight: 1 },
+  { id: 'itm_093', name: '旧手电筒', desc: '拍一拍就亮', tier: 0, icon: '🔦', weight: 1 },
+  { id: 'itm_094', name: '木陀螺', desc: '鞭子抽过的印子还在', tier: 0, icon: '🪀', weight: 1 },
+  { id: 'itm_095', name: '旧棉鞋', desc: '鞋底纳得密密麻麻', tier: 0, icon: '🥿', weight: 1 },
+  { id: 'itm_096', name: '搪瓷脸盆', desc: '盆沿磕掉一块瓷', tier: 0, icon: '🪣', weight: 1 },
+  { id: 'itm_097', name: '旧算盘', desc: '珠子拨起来哗啦响', tier: 0, icon: '🧮', weight: 1 },
+  { id: 'itm_098', name: '干电池收音机壳', desc: '只剩个空壳子', tier: 0, icon: '📻', weight: 1 },
+  { id: 'itm_099', name: '旧针线筐', desc: '顶针线团都在', tier: 0, icon: '🧵', weight: 1 },
+  { id: 'itm_100', name: '豁口茶缸', desc: '喝水小心别割嘴', tier: 0, icon: '🥤', weight: 1 },
+  { id: 'itm_101', name: '旧挂锁', desc: '没钥匙，锁个寂寞', tier: 0, icon: '🔒', weight: 1 },
+  { id: 'itm_102', name: '老花镜盒', desc: '镜子没了，盒子挺结实', tier: 0, icon: '👓', weight: 1 },
+  // 绿 · 良品 +20
+  { id: 'itm_103', name: '循环扇', desc: '摇头范围一百八十度', tier: 1, icon: '🌀', weight: 1, setId: 'set_elec' },
+  { id: 'itm_104', name: '手写账本', desc: '字迹工整，账目清楚', tier: 1, icon: '📒', weight: 1, setId: 'set_paper' },
+  { id: 'itm_105', name: '放大镜台灯', desc: '看报纸再也不眯眼', tier: 1, icon: '🔍', weight: 1, setId: 'set_optic' },
+  { id: 'itm_106', name: '电饭煲', desc: '煮饭带锅巴功能', tier: 1, icon: '🍚', weight: 1 },
+  { id: 'itm_107', name: '粗陶茶碗', desc: '碗口一圈粗陶釉', tier: 1, icon: '🥣', weight: 1, setId: 'set_tea' },
+  { id: 'itm_108', name: '筋膜枪', desc: '六个头，档位齐全', tier: 1, icon: '🔫', weight: 1 },
+  { id: 'itm_109', name: '电子秤', desc: '精确到克', tier: 1, icon: '⚖️', weight: 1 },
+  { id: 'itm_110', name: '行李箱', desc: '万向轮静音，密码锁好使', tier: 1, icon: '🧳', weight: 1 },
+  { id: 'itm_111', name: '电热饭盒', desc: '插电二十分钟就热透', tier: 1, icon: '🍱', weight: 1 },
+  { id: 'itm_112', name: '手持吸尘器', desc: '沙发缝的克星', tier: 1, icon: '🧹', weight: 1 },
+  { id: 'itm_113', name: '桌面小冰箱', desc: '六罐可乐的容量', tier: 1, icon: '🧊', weight: 1 },
+  { id: 'itm_114', name: '蓝牙耳机仓', desc: '耳机没了，仓还在', tier: 1, icon: '🎧', weight: 1 },
+  { id: 'itm_115', name: '暖风机', desc: '浴室里的小太阳', tier: 1, icon: '♨️', weight: 1 },
+  { id: 'itm_116', name: '折叠梯', desc: '四档，承重一百五', tier: 1, icon: '🪜', weight: 1 },
+  { id: 'itm_117', name: '自动喂食器', desc: '猫主子准时开饭', tier: 1, icon: '🐱', weight: 1 },
+  { id: 'itm_118', name: '投影闹钟', desc: '时间打在天花板上', tier: 1, icon: '⏰', weight: 1 },
+  { id: 'itm_119', name: '保温杯礼盒', desc: '一对杯子，没拆封', tier: 1, icon: '🎁', weight: 1 },
+  { id: 'itm_120', name: '电动修眉刀', desc: '小巧，安静', tier: 1, icon: '🪒', weight: 1 },
+  { id: 'itm_121', name: '露营天幕', desc: '防晒涂层，六米大面', tier: 1, icon: '⛺', weight: 1 },
+  { id: 'itm_122', name: '榨汁机大杯', desc: '刀头锋利，出汁率高', tier: 1, icon: '🧃', weight: 1 },
+  // 蓝 · 稀有 +16
+  { id: 'itm_123', name: '老式显微镜', desc: '黄铜镜身，倍数齐全', tier: 2, icon: '🔬', weight: 1, setId: 'set_optic' },
+  { id: 'itm_124', name: '航海罗盘钟', desc: '船上下来的老物件', tier: 2, icon: '🧭', weight: 1, setId: 'set_time' },
+  { id: 'itm_125', name: '建盏茶碗', desc: '兔毫纹理，灯下发光', tier: 2, icon: '🍵', weight: 1, setId: 'set_tea' },
+  { id: 'itm_126', name: '钢笔字帖', desc: '名家手迹，临摹佳品', tier: 2, icon: '🖋️', weight: 1, setId: 'set_paper' },
+  { id: 'itm_127', name: '铜鎏金香炉', desc: '炉身三足，烟直着上', tier: 2, icon: '🪔', weight: 1, setId: 'set_curio' },
+  { id: 'itm_128', name: '老式电视机', desc: '十四寸，雪花屏还在', tier: 2, icon: '📺', weight: 1, setId: 'set_elec', sizeDist: { 2: 1 } },
+  { id: 'itm_129', name: '真皮公文包', desc: '头层牛皮，五金锃亮', tier: 2, icon: '💼', weight: 1 },
+  { id: 'itm_130', name: '老式打字机', desc: '按键弹，色带还有墨', tier: 2, icon: '⌨️', weight: 1, sizeDist: { 2: 1 } },
+  { id: 'itm_131', name: '黄花梨笔筒', desc: '木纹如流水', tier: 2, icon: '🖌️', weight: 1 },
+  { id: 'itm_132', name: '老银元宝簪', desc: '簪头雕着并蒂莲', tier: 2, icon: '📌', weight: 1 },
+  { id: 'itm_133', name: '进口巧克力礼盒', desc: '保质期还剩半年', tier: 2, icon: '🍫', weight: 1 },
+  { id: 'itm_134', name: '专业钓竿包', desc: '三节竿，海钓配置', tier: 2, icon: '🎣', weight: 1 },
+  { id: 'itm_135', name: '老式缝纫机头', desc: '铸铁机身，脚踏没跟上', tier: 2, icon: '🧷', weight: 1, sizeDist: { 2: 1 } },
+  { id: 'itm_136', name: '整套象棋', desc: '红木棋子，一颗不缺', tier: 2, icon: '♟️', weight: 1 },
+  { id: 'itm_137', name: '老式留声机喇叭', desc: '铜喇叭擦得发亮', tier: 2, icon: '📯', weight: 1 },
+  { id: 'itm_138', name: '皮影箱', desc: '整套西游人物皮影', tier: 2, icon: '🎭', weight: 1 },
+  // 紫 · 史诗 +12
+  { id: 'itm_139', name: '塔钟齿轮组', desc: '百年塔钟拆下来的芯', tier: 3, icon: '⚙️', weight: 1, setId: 'set_time' },
+  { id: 'itm_140', name: '观星仪', desc: '黄道刻度纤毫毕现', tier: 3, icon: '🌠', weight: 1, setId: 'set_optic' },
+  { id: 'itm_141', name: '老白茶饼', desc: '压了十五年的茶饼', tier: 3, icon: '🫓', weight: 1, setId: 'set_tea' },
+  { id: 'itm_142', name: '线装古籍', desc: '纸页发黄，字口清晰', tier: 3, icon: '📜', weight: 1, setId: 'set_paper' },
+  { id: 'itm_143', name: '珊瑚树盆景', desc: '红珊瑚枝，配青玉盆', tier: 3, icon: '🪸', weight: 1, setId: 'set_curio' },
+  { id: 'itm_144', name: '发烧级音响', desc: '胆机功放，声音暖', tier: 3, icon: '🎛️', weight: 1, setId: 'set_elec', sizeDist: { 2: 1 } },
+  { id: 'itm_145', name: '冠军签名篮球', desc: '夺冠那年的签名球', tier: 3, icon: '🏀', weight: 1 },
+  { id: 'itm_146', name: '紫檀首饰匣', desc: '三层抽屉，暗格一个', tier: 3, icon: '🗄️', weight: 1, setId: 'set_curio' },
+  { id: 'itm_147', name: '老坑端砚', desc: '呵气成墨，石眼一枚', tier: 3, icon: '🪨', weight: 1 },
+  { id: 'itm_148', name: '手工皮马鞍', desc: '全手工缝线，皮质油亮', tier: 3, icon: '🐴', weight: 1, sizeDist: { 2: 1 } },
+  { id: 'itm_149', name: '限量版球衣', desc: '落场款，带防伪标', tier: 3, icon: '👕', weight: 1 },
+  { id: 'itm_150', name: '玛瑙围棋罐', desc: '一对棋罐，玛瑙纹路', tier: 3, icon: '⚫', weight: 1 },
+  // 金 · 传说 +8
+  { id: 'itm_151', name: '陀飞轮怀表', desc: '陀飞轮转起来像活物', tier: 4, icon: '⌚', weight: 1, setId: 'set_time' },
+  { id: 'itm_152', name: '黄铜天文望远镜', desc: '十九世纪的观星利器', tier: 4, icon: '🔭', weight: 1, setId: 'set_optic' },
+  { id: 'itm_153', name: '头春茶王礼盒', desc: '一年的头春都在这盒里', tier: 4, icon: '🎁', weight: 1, setId: 'set_tea' },
+  { id: 'itm_154', name: '宋版书影印卷', desc: '一页千金的那种卷', tier: 4, icon: '📚', weight: 1, setId: 'set_paper' },
+  { id: 'itm_155', name: '孔雀石孔雀', desc: '整块孔雀石雕的开屏', tier: 4, icon: '🦚', weight: 1, setId: 'set_curio' },
+  { id: 'itm_156', name: '激光唱机', desc: '第一代激光唱机，能唱', tier: 4, icon: '📀', weight: 1, setId: 'set_elec' },
+  { id: 'itm_157', name: '祖母绿戒指', desc: '哥伦比亚色，净度高', tier: 4, icon: '💍', weight: 1 },
+  { id: 'itm_158', name: '纯金钢笔', desc: '十四K笔尖，写感顺滑', tier: 4, icon: '🖋️', weight: 1 },
+  // 红 · 大金 +4
+  { id: 'itm_159', name: '传国玉玺印模', desc: '受命于天，博物馆级复制件', tier: 5, icon: '🏮', weight: 1 },
+  { id: 'itm_160', name: '深海沉船金币', desc: '从沉船宝藏里捞上来的', tier: 5, icon: '🪙', weight: 1 },
+  { id: 'itm_161', name: '皇室蓝钻胸针', desc: '据说戴过的人都留了名', tier: 5, icon: '💠', weight: 1 },
+  { id: 'itm_162', name: '失传孤本手稿', desc: '作者亲笔，存世仅此一份', tier: 5, icon: '📜', weight: 1 },
 ];
 
 const ITEMS_BY_TIER = [0, 1, 2, 3, 4, 5, 6].map(t => ITEMS.filter(i => i.tier === t));
 
-// 套装（M2 图鉴）：36 件分 6 套，其余 44 件为散件、照样点亮收集
+// 套装（M2 图鉴）：60 件分 6 套（ADR-058 各 +4），其余 100 件为散件、照样点亮收集
 const SETS = [
   { id: 'set_time', name: '时计套装', desc: '表与钟的时间线' },
   { id: 'set_optic', name: '光影套装', desc: '镜头与镜片' },
