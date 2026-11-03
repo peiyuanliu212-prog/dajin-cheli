@@ -342,6 +342,17 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
 /* 存档码（ADR-055） */
 .code-area { width: 100%; box-sizing: border-box; background: #0d100c; color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 10px; font-size: 12px; line-height: 1.5; word-break: break-all; resize: vertical; margin: 6px 0 10px; font-family: ui-monospace, monospace; }
 
+/* 金库幸运箱（ADR-056）：仅 transform 动画，软件光栅友好 */
+.luckbox-card { width: 100%; margin-top: 10px; padding: 12px 14px; background: #171a12; border: 1px solid var(--gold); border-radius: 14px; color: var(--text); font-size: 17px; letter-spacing: 1px; cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.luckbox-card b { color: var(--gold); font-size: 14px; }
+.luckbox-card small { flex-basis: 100%; color: var(--dim); font-size: 12px; letter-spacing: 0; }
+.luck-box { font-size: 84px; text-align: center; line-height: 1.25; }
+.luck-box.shake { animation: luckShake .55s ease-in-out; }
+.luck-box.pop { animation: luckPop .5s ease-out; }
+@keyframes luckShake { 0%,100% { transform: rotate(0); } 20% { transform: rotate(-7deg) scale(1.04); } 45% { transform: rotate(6deg); } 70% { transform: rotate(-5deg) scale(1.06); } }
+@keyframes luckPop { 0% { transform: scale(.6); } 60% { transform: scale(1.18); } 100% { transform: scale(1); } }
+#luck-result.big { color: var(--gold); font-weight: 700; }
+
 </style>
 </head>
 <body>
@@ -374,7 +385,7 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
         <p>👑 排行榜开榜：谁出的货最贵，摆出来一起比</p>
         <p>🌱 新手巅峰：头几把就是巅峰手气，先爽为敬</p>
         <p>💎 瑰宝升级：全 1 格更好装，还能看广告祈福把出率拉高</p>
-        <p>🏚 战利品实物入仓、展览柜照常营业：好货带回家摆上柜</p>
+        <p>🎁 金库幸运箱上线：看广告免费开箱，连开必出大奖，不限次数</p>
         <p>🎞 画面大优化：动画滑动更顺滑，不再掉帧</p>
         <p>📺 爽局祈福改充能：看一次管 3 趟；广告奖励丢了自动补发；新增存档码，换设备接着玩</p>
       </div>
@@ -399,6 +410,7 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
     </div>
     <div class="econ-line card" id="econ-line"></div>
     <button id="btn-supply" class="btn-ghost">📺 每日补给 · 看广告 +40 🪙</button>
+    <button id="btn-luckbox" class="luckbox-card">🎁 金库幸运箱 <b>看广告免费开</b><small>有机会直接开出大金实物 · 连开必出大奖 · 不限次数</small></button>
     <p id="supply-note" class="fineprint"></p>
     <div class="config-switch">
       <span class="cs-label">模式</span>
@@ -601,6 +613,18 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
       <div class="ultra-hint">轻点任意处收下</div>
     </div>
   </div>
+    <div id="luck-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3>🎁 金库幸运箱</h3>
+        <div id="luck-box-visual" class="luck-box">🎁</div>
+        <p class="pending-note" id="luck-pity"></p>
+        <p class="pending-note" id="luck-result">奖池：仓币 20~150 · 爽局/祈福充能 · 精品券/珍品券 · 金档大金（5%）· 红档大金（2%）。看广告开箱，不限次数，开出实物直接入仓库。</p>
+        <div class="modal-btns">
+          <button id="btn-luck-open" class="btn-primary">📺 看广告开箱</button>
+          <button id="btn-luck-close" class="btn-ghost">关闭</button>
+        </div>
+      </div>
+    </div>
     <div id="save-modal" class="modal hidden">
       <div class="modal-card">
         <h3>💾 存档码 · 导出 / 导入</h3>
@@ -743,6 +767,16 @@ const ECONOMY = {
   achievementCoin: 20, collectorCoin: 300, // v1.1：全图鉴成就单独加码 300
   setCoin: 100,
   ads: { supplyCoins: 40, coinBonusRate: 0.5, coinBonusCap: 40, expandCells: 4, recoveryCompCoins: 30, shockDrop: 20, shockFloor: 85, intelWeightMult: 6, gapMax: 30, sellBonusRate: 0.25, superDailyCap: 2, ultraMult: 4, boostTrips: 3, ultraTrips: 3 }, // ADR-032 广告位参数；superDailyCap 为 ADR-048 超级爽局每日趟数上限；boostTrips/ultraTrips 为 ADR-055 充能制（一支广告管的趟数）
+  luckbox: { // ADR-056 金库幸运箱：看广告开箱、不限次数；big 为大奖档（幸运值保底池）
+    prizes: [
+      { kind: 'coins', amount: 20, w: 25 }, { kind: 'coins', amount: 40, w: 20 },
+      { kind: 'coins', amount: 80, w: 12 }, { kind: 'coins', amount: 150, w: 5, big: true },
+      { kind: 'boost', amount: 1, w: 12 }, { kind: 'ultra', amount: 1, w: 8 },
+      { kind: 'voucher', id: 'secret', w: 8 }, { kind: 'voucher', id: 'topsecret', w: 3, big: true },
+      { kind: 'item', tier: 4, w: 5, big: true }, { kind: 'item', tier: 5, w: 2, big: true },
+    ],
+    pityAt: 4, // 连续 4 箱未出大奖 → 第 5 箱必出大奖档
+  },
 };
 function coinRateAt(R) {
   for (const [t, r] of ECONOMY.rateBands) if (R < t) return r;
@@ -1468,6 +1502,7 @@ const DEFAULTS = {
   lastIntelDay: null, lastGapDay: null, // ADR-041：藏宝情报 / 门票差额补齐的日期计数
   lastSuperDay: null, superCount: 0, // ADR-048：超级爽局每日趟数计数
   boostBank: 0, ultraBank: 0, // ADR-055：爽局/祈福充能余额（看一次广告 +boostTrips/ultraTrips 趟，开局自动消费）
+  luckMeter: 0, luckCredit: 0, luckOpened: 0, // ADR-056：幸运箱幸运值（保底计数）/ 补发免费次数 / 累计开箱数
   stash: [], cabinet: [], cabinetSlots: 8, // v1.1 仓库系统：战利品实例 / 展柜 uid 列表 / 已解锁展位数
   lbBest: {}, // ADR-048 排行榜：本地各榜最佳（score=估值×10 整数），仅刷新时才向云端提交
   sellBonusArmed: false, lastSellBonusDay: null, // v1.1：出售加成（下一次出售 +25%）与日期计数
@@ -2248,6 +2283,8 @@ function applyAdGrant(rec) {
     } else if (rec.type === 'cabinetslot') {
       if ((save.cabinetSlots ?? 8) < 10) { save.cabinetSlots = (save.cabinetSlots ?? 8) + 1; storeSave(save); $('supply-note').textContent = `📺 展位已补发解锁：现在共 ${save.cabinetSlots} 个展位（去仓库看看）`; }
       else storeSave(save);
+    } else if (rec.type === 'luckbox') {
+      save.luckCredit = (save.luckCredit ?? 0) + 1; storeSave(save); $('supply-note').textContent = '📺 幸运箱已补发 1 次免费开箱（首页金库幸运箱里开）';
     } else if (rec.type === 'peek' || rec.type === 'radar') {
       storeSave(save); // 信息类：原局情境已过，不折算仓币
     } else { // rescue / expand / shock / guard：原局上下文已随重载丢失 → 折算仓币补偿
@@ -3640,6 +3677,77 @@ $('btn-save-import').addEventListener('click', () => {
   replaceSave(obj);
   $('save-note').textContent = '导入成功，正在重进游戏…';
   setTimeout(() => location.reload(), 700);
+});
+
+// ---------- 金库幸运箱（ADR-056）：看广告开箱、不限次数；大奖档有幸运值保底 ----------
+function rollLuckPrize() {
+  const table = ECONOMY.luckbox.prizes;
+  const pity = (save.luckMeter ?? 0) >= ECONOMY.luckbox.pityAt;
+  const pool = pity ? table.filter(p => p.big) : table;
+  const total = pool.reduce((a, p) => a + p.w, 0);
+  let r = Math.random() * total;
+  for (const p of pool) { r -= p.w; if (r <= 0) return { prize: p, pity }; }
+  return { prize: pool[pool.length - 1], pity };
+}
+function grantLuckPrize(prize) {
+  if (prize.kind === 'coins') { creditCoins(prize.amount); return { icon: '🪙', text: `仓币 +${prize.amount}` }; }
+  if (prize.kind === 'boost') { save.boostBank = (save.boostBank ?? 0) + prize.amount; storeSave(save); return { icon: '📺', text: `爽局充能 +${prize.amount} 趟` }; }
+  if (prize.kind === 'ultra') { save.ultraBank = (save.ultraBank ?? 0) + prize.amount; storeSave(save); return { icon: '🔮', text: `祈福充能 +${prize.amount} 趟` }; }
+  if (prize.kind === 'voucher') {
+    save.vouchers[prize.id] = (save.vouchers[prize.id] ?? 0) + 1; storeSave(save);
+    return { icon: '🎟', text: `${prize.id === 'secret' ? '精品仓' : '珍品仓'}体验券 ×1` };
+  }
+  // item：随机同档实物入仓（可出售/上展柜；图鉴仍只认亲手带出）
+  const pool = ITEMS.filter(i => i.tier === prize.tier);
+  const it = pool[Math.floor(Math.random() * pool.length)];
+  const band = [it.valueMin ?? SHARED.valueBandsWan[it.tier][0], it.valueMax ?? SHARED.valueBandsWan[it.tier][1]];
+  const value = Math.round((band[0] + Math.random() * (band[1] - band[0])) * 10) / 10;
+  const stamp = Math.max(5, Math.round(value * 2));
+  save.stash.push({ uid: `lk${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`, id: it.id, value, stamp, ts: Date.now(), runId: 'luckbox', memorial: false });
+  storeSave(save);
+  return { icon: it.icon, text: `${it.name}（${value} 万）直接入仓！`, itemTier: it.tier };
+}
+function renderLuck() {
+  const m = save.luckMeter ?? 0, at = ECONOMY.luckbox.pityAt;
+  $('luck-pity').textContent = (save.luckCredit ?? 0) > 0
+    ? `🎟 有 ${save.luckCredit} 次免费开箱（广告补发） · 幸运值 ${'★'.repeat(m)}${'☆'.repeat(Math.max(0, at - m))}`
+    : m >= at ? '幸运值已满 ★★★★ · 下一箱必出大奖！' : `幸运值 ${'★'.repeat(m)}${'☆'.repeat(at - m)} · 再开 ${at - m} 箱必出大奖（已开 ${save.luckOpened ?? 0} 箱）`;
+  $('btn-luck-open').textContent = (save.luckCredit ?? 0) > 0 ? '🎁 免费开箱（补发）' : '📺 看广告开箱';
+}
+async function spinLuckbox() {
+  const btn = $('btn-luck-open');
+  btn.disabled = true;
+  const visual = $('luck-box-visual');
+  visual.textContent = '🎁';
+  visual.classList.remove('pop'); visual.classList.add('shake');
+  if (!FAST) await delay(580);
+  const { prize, pity } = rollLuckPrize();
+  const got = grantLuckPrize(prize);
+  save.luckMeter = prize.big ? 0 : (save.luckMeter ?? 0) + 1;
+  save.luckOpened = (save.luckOpened ?? 0) + 1;
+  storeSave(save);
+  visual.classList.remove('shake'); visual.classList.add('pop');
+  visual.textContent = got.icon;
+  const res = $('luck-result');
+  res.textContent = `${pity ? '🔥 保底触发！' : '开出：'}${got.icon} ${got.text}${prize.big ? ' —— 大奖！' : ''}`;
+  res.classList.toggle('big', !!prize.big);
+  if (got.itemTier === 5 && navigator.vibrate) navigator.vibrate([60, 40, 90]);
+  renderLuck();
+  renderHome();
+  btn.disabled = false;
+}
+$('btn-luckbox').addEventListener('click', () => { renderLuck(); $('luck-result').textContent = '奖池：仓币 20~150 · 爽局/祈福充能 · 精品券/珍品券 · 金档大金（5%）· 红档大金（2%）。看广告开箱，不限次数，开出实物直接入仓库。'; $('luck-result').classList.remove('big'); $('luck-box-visual').textContent = '🎁'; $('luck-modal').classList.remove('hidden'); });
+$('btn-luck-close').addEventListener('click', () => $('luck-modal').classList.add('hidden'));
+$('btn-luck-open').addEventListener('click', async () => {
+  if ((save.luckCredit ?? 0) > 0) { save.luckCredit -= 1; storeSave(save); spinLuckbox(); return; }
+  const btn = $('btn-luck-open');
+  btn.disabled = true;
+  $('luck-result').textContent = '广告播放中…';
+  const r = await Ads.watch('luckbox');
+  if (r.simulated && !FAST) await delay(900);
+  btn.disabled = false;
+  if (r.granted) spinLuckbox();
+  else $('luck-result').textContent = r.message || '广告未看完，箱子没打开。';
 });
 $('board-tab-item').addEventListener('click', () => { boardTab = 'item_best'; renderBoard(); });
 $('board-tab-run').addEventListener('click', () => { boardTab = 'run_best'; renderBoard(); });
