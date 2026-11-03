@@ -353,6 +353,17 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
 @keyframes luckPop { 0% { transform: scale(.6); } 60% { transform: scale(1.18); } 100% { transform: scale(1); } }
 #luck-result.big { color: var(--gold); font-weight: 700; }
 
+/* 玩家互动（ADR-057） */
+.feed-line { margin-top: 10px; padding: 8px 12px; background: #101208; border: 1px solid var(--line); border-radius: 10px; color: var(--dim); font-size: 13px; text-align: center; transition: opacity .45s ease; }
+.goal-card { margin-top: 10px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+.goal-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; }
+.goal-head b { color: var(--gold); font-size: 13px; }
+.goal-bar { height: 10px; background: #0d100c; border-radius: 6px; margin: 10px 0; overflow: hidden; }
+.goal-bar i { display: block; height: 100%; width: 0; background: var(--gold); border-radius: 6px; transition: width .6s ease; }
+.goal-actions { display: flex; gap: 10px; align-items: center; font-size: 13px; color: var(--dim); }
+.goal-actions > * { flex: 1; }
+.rival-line { text-align: center; color: var(--gold); font-size: 14px; margin: 6px 0 0; }
+
 </style>
 </head>
 <body>
@@ -386,7 +397,7 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
         <p>🌱 新手巅峰：头几把就是巅峰手气，先爽为敬</p>
         <p>💎 瑰宝升级：全 1 格更好装，还能看广告祈福把出率拉高</p>
         <p>🎁 金库幸运箱上线：看广告免费开箱，连开必出大奖，不限次数</p>
-        <p>🎞 画面大优化：动画滑动更顺滑，不再掉帧</p>
+        <p>👻 玩家互动上线：幽灵对手局内追赶、全服出货播报、每日全服目标领奖</p>
         <p>📺 爽局祈福改充能：看一次管 3 趟；广告奖励丢了自动补发；新增存档码，换设备接着玩</p>
       </div>
       <button id="btn-title-start" class="btn-primary btn-title">开始游戏</button>
@@ -411,6 +422,12 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
     <div class="econ-line card" id="econ-line"></div>
     <button id="btn-supply" class="btn-ghost">📺 每日补给 · 看广告 +40 🪙</button>
     <button id="btn-luckbox" class="luckbox-card">🎁 金库幸运箱 <b>看广告免费开</b><small>有机会直接开出大金实物 · 连开必出大奖 · 不限次数</small></button>
+    <div id="feed-line" class="feed-line hidden"></div>
+    <div id="goal-card" class="goal-card hidden">
+      <div class="goal-head"><span>🌍 全服今日目标</span><b id="goal-text"></b></div>
+      <div class="goal-bar"><i id="goal-bar-fill"></i></div>
+      <div class="goal-actions" id="goal-actions"></div>
+    </div>
     <p id="supply-note" class="fineprint"></p>
     <div class="config-switch">
       <span class="cs-label">模式</span>
@@ -482,6 +499,7 @@ body { --hero-img: url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
     <button id="btn-peek" class="btn-ghost hidden" style="width:100%;margin-top:8px">📺 情报 · 看广告预告下一格品阶</button>
     <button id="btn-radar" class="btn-ghost hidden" style="width:100%;margin-top:8px">📺 套装雷达 · 缺的那件在这仓里吗</button>
     <p class="seed-line">本局种子 <span id="run-seed"></span> · <span id="run-meta"></span></p>
+        <p id="rival-line" class="rival-line hidden"></p>
 
     <!-- 满仓待处置 -->
     <div id="pending-modal" class="modal hidden">
@@ -1466,6 +1484,13 @@ async function lbSubmitScore(board, score, dims) {
 function lbFetchBoard(board) { return lbRequest('/leaderboard?board=' + encodeURIComponent(board)); }
 function lbFetchMine(board) { return lbRequest('/leaderboard/me?board=' + encodeURIComponent(board)); }
 
+/* ---------- 玩家互动（ADR-057）：播报 / 幽灵对手 / 全服目标 ---------- */
+function feedFetch() { return lbRequest('/feed'); }
+function rivalFetch() { return lbRequest('/rival'); }
+function goalFetch() { return lbRequest('/goal'); }
+function goalAdd(runId, amount) { return lbRequest('/goal/add', { runId, amount }); }
+function goalClaim(double) { return lbRequest('/goal/claim', { double: !!double }); }
+
 // ---------- 全屏顶部安全适配（colorbox-fullscreen-safe-top 规范，ADR-033） ----------
 // 规范口径：初始化后调用 getFullscreenSafeTop()（同步、无参、CSS px、取不到为 0），
 // 同一内容只避让一次。本实现把安全距写入全局 CSS 变量 --safe-top，
@@ -2078,6 +2103,7 @@ let lastHistEntry = null; // 本局刚写入的战绩条目（救援后同步其
 let chainNextLeg = 1;   // M3 连锁：下一局的仓序（会话内有效，刷新即断链）
 let shopCtx = null;     // M3 局前商店上下文
 let boostChain = false; // 广告爽局（ADR-026）：本趟出击是否已激活爽局（连锁整趟有效，塌架/新出击重置）
+let rivalNow = null; // 幽灵对手（ADR-057）：本趟追赶目标 {displayName, avatar, score(×10)}，容器外/无数据为 null
 let superChain = false; // 超级爽局（ADR-048）：本趟是否已升级 S 配置（在爽局之上，连锁整趟有效）
 let superCredit = false; // 超级爽局广告重载补发的额度（供下趟出击，消费一次；含爽局）
 let newbieChain = false; // 新手巅峰（ADR-048）：存档前 3 局整趟按 A 配置（boostKind='newbie'）
@@ -2127,6 +2153,7 @@ function ledgerRow(label, val, cls) { const r = mk('div', cls || 'row'); r.appen
 
 // ---------- 首页 ----------
 function renderHome() {
+  refreshSocial(); // ADR-057：互动数据节流刷新（45s）
   $('btn-continue').classList.toggle('hidden', !readRunCheckpoint());
   $('rec-best').textContent = `${fmtWan(save.bestCarried)} 万`;
   $('rec-total').textContent = `${fmtWan(save.totalCarried)} 万`;
@@ -2262,6 +2289,11 @@ function applyAdGrant(rec) {
     if (rec.type === 'boost') { save.boostBank = (save.boostBank ?? 0) + ECONOMY.ads.boostTrips; storeSave(save); $('supply-note').textContent = `📺 爽局充能已补发 +${ECONOMY.ads.boostTrips} 趟`; return; }
     if (rec.type === 'super') { superCredit = true; storeSave(save); return; }
     if (rec.type === 'ultra') { save.ultraBank = (save.ultraBank ?? 0) + ECONOMY.ads.ultraTrips; storeSave(save); $('supply-note').textContent = `📺 祈福充能已补发 +${ECONOMY.ads.ultraTrips} 趟`; return; }
+    if (rec.type === 'goal') { // 广告已看、领奖没走完 → 开机重试双倍领奖（服务端 claimed 幂等防重）
+      storeSave(save);
+      goalClaim(true).then(d => { creditCoins(d.amount); $('supply-note').textContent = `📺 全服目标双倍奖励已补发 +${d.amount} 🪙`; renderHome(); }).catch(() => {});
+      return;
+    }
     if (rec.type === 'supply') {
       if (save.lastSupplyDay !== todayStr()) { save.lastSupplyDay = todayStr(); creditCoins(ECONOMY.ads.supplyCoins); $('supply-note').textContent = `📺 广告补给已补发 +${ECONOMY.ads.supplyCoins} 🪙`; }
       else storeSave(save);
@@ -2643,6 +2675,8 @@ function startRun(warehouse, opts = {}) {
     if (superChain) boostChain = true;
     if (boostChain && (save.boostBank ?? 0) > 0) { save.boostBank -= 1; storeSave(save); }
     if (ultraChain && (save.ultraBank ?? 0) > 0) { save.ultraBank -= 1; storeSave(save); }
+    rivalNow = null; // 幽灵对手：新出击重新抓一位真实玩家战绩（异步，不挡开局）
+    if (lbAvailable()) rivalFetch().then(r => { rivalNow = r; renderRivalLine(); }).catch(() => {});
     shockOfferDone = false; intelChain = intelNow || intelCredit; intelCredit = null;
     newbieChain = !boostChain && warehouse.id !== 'challenge' && (save.runs ?? 0) < 3; // 新手巅峰：存档前 3 局整趟 A 配置
     if (superChain) { const t = todayStr(); if (save.lastSuperDay !== t) { save.lastSuperDay = t; save.superCount = 0; } save.superCount = (save.superCount ?? 0) + 1; storeSave(save); }
@@ -2714,6 +2748,7 @@ function renderRun(prevValue, opts = {}) {
   const target = Math.round(run.bagValue() * 10) / 10;
   displayedValue = target;
   $('hud-value').textContent = `${fmtWan(target)} 万`;
+  renderRivalLine();
   $('hud-count').textContent = `${run.bag.length} 件`;
   $('hud-opens').textContent = `${run.opens}/16`;
   $('hud-depth').textContent = depthNameAt(run.opens);
@@ -3147,6 +3182,12 @@ function finishToResult(result) {
     body.append(ledgerEl(rows));
     if (Array.isArray(result.loot) && result.loot.length) body.append(mk('p', 'top-item', '🏚 战利品已实物入仓：回首页 → 仓库，出售换仓币、好货摆上展柜。'));
     body.append(mk('p', 'top-item', `${result.topItem ? `最贵单品：${result.topItem.icon} ${result.topItem.name}（${TIER_NAMES[result.topItem.tier]}）${fmtWan(result.topItem.value)} 万` : ''}${result.hasRed ? ' · 本局出过大金！' : ''}`));
+    if (rivalNow) {
+      const rv = rivalNow.score / 10;
+      body.append(mk('p', 'top-item', result.C > rv
+        ? `👻 击败幽灵对手「${rivalNow.displayName}」（带出 ${fmtWan(rv)} 万）——这局你赢了！`
+        : `👻 差 ${fmtWan(rv - result.C)} 万没追上「${rivalNow.displayName}」（带出 ${fmtWan(rv)} 万），再贪一格就赢了`));
+    }
   }
   if (unlocked.length || newSeen.length) {
     const un = mk('div', 'unlock-note');
@@ -3396,9 +3437,71 @@ function maybeSubmitLeaderboard(result) {
         pending.push(lbSubmitScore('run_best', score, { warehouse: result.warehouse.id, boosted: !!result.boosted, boostKind: result.boostKind ?? null, ultra: !!result.ultraBoost }));
       }
     }
+    if (result.outcome !== 'caught' && result.C > 0) goalAdd(result.runId, Math.round(result.C * 10)).catch(() => {}); // ADR-057 全服目标计入（runId 幂等）
     pending.forEach(p => { if (p && p.catch) p.catch(() => {}); });
   } catch { /* 提交失败静默：本地最佳已记，下次刷新纪录再试 */ }
 }
+// ---------- 玩家互动渲染（ADR-057）：播报墙 / 全服目标 / 幽灵对手行 ----------
+let feedEvents = [], feedIdx = 0, feedTimer = null, socialAt = 0;
+function renderFeed() {
+  const el = $('feed-line');
+  if (!feedEvents.length) { el.classList.add('hidden'); return; }
+  const e = feedEvents[feedIdx % feedEvents.length];
+  el.textContent = e.kind === 'item'
+    ? `🔥 ${e.displayName} 刚出 ${e.itemName} · ${fmtWan(e.score / 10)} 万`
+    : `💰 ${e.displayName} 刚带出 ${fmtWan(e.score / 10)} 万`;
+  el.classList.remove('hidden');
+}
+function renderGoal(d) {
+  const card = $('goal-card');
+  if (!d) { card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  $('goal-text').textContent = `全服已带出 ${fmtWan(d.total / 10)} 万 / ${fmtWan(d.target / 10)} 万`;
+  $('goal-bar-fill').style.width = `${Math.min(100, Math.floor(d.total / d.target * 100))}%`;
+  const act = $('goal-actions');
+  act.replaceChildren();
+  if (d.claimed) act.append(mk('span', null, '今日奖励已领取 ✓ 明天继续冲'));
+  else if (d.reached) {
+    const b1 = mk('button', 'btn-ghost', `免费领 ${d.reward} 🪙`);
+    b1.addEventListener('click', () => claimGoal(false));
+    const b2 = mk('button', 'btn-primary', `📺 看广告领 ${d.doubleReward} 🪙`);
+    b2.addEventListener('click', () => claimGoal(true));
+    act.append(b1, b2);
+  } else act.append(mk('span', null, `达标后全服人人领 ${d.reward} 🪙（看广告领 ${d.doubleReward}）· 你每带出一局都在往里加`));
+}
+async function claimGoal(double) {
+  if (double) {
+    const r = await Ads.watch('goal');
+    if (!r.granted) { $('supply-note').textContent = r.message || '广告未看完，双倍没领成，可改领免费版。'; return; }
+  }
+  try {
+    const d = await goalClaim(double);
+    creditCoins(d.amount);
+    $('supply-note').textContent = `🌍 全服目标奖励到账 +${d.amount} 🪙`;
+    socialAt = 0; refreshSocial(); renderHome();
+  } catch (e) { $('supply-note').textContent = (e && e.message) || '领取失败，稍后再试'; socialAt = 0; refreshSocial(); }
+}
+function refreshSocial() {
+  if (!lbAvailable()) return;
+  const now = Date.now();
+  if (now - socialAt < 45000) return;
+  socialAt = now;
+  feedFetch().then(d => {
+    feedEvents = (d && d.events) || [];
+    renderFeed();
+    if (feedEvents.length > 1 && !feedTimer) feedTimer = setInterval(() => { feedIdx++; const el = $('feed-line'); el.style.opacity = '0'; setTimeout(() => { renderFeed(); el.style.opacity = '1'; }, 460); }, 3600);
+  }).catch(() => {});
+  goalFetch().then(d => renderGoal(d)).catch(() => {});
+}
+function renderRivalLine() {
+  const el = $('rival-line');
+  if (!el) return;
+  if (!rivalNow || !run) { el.classList.add('hidden'); return; }
+  const target = rivalNow.score / 10, mine = run.bagValue();
+  el.textContent = `👻 对手「${rivalNow.displayName}」已带出 ${fmtWan(target)} 万 · ${mine >= target ? '你已反超，稳住带出去就赢！' : `你还差 ${fmtWan(target - mine)} 万`}`;
+  el.classList.remove('hidden');
+}
+
 function boardRow(e) {
   const row = mk('div', 'board-row' + (e.isCurrent ? ' me' : ''));
   row.append(mk('span', 'board-rank', String(e.rank)));
